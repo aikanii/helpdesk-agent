@@ -26,6 +26,9 @@ class Ticket(Base):
     assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
     source: Mapped[str] = mapped_column(String(32), default="AI Agent")
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -36,9 +39,26 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    # Keep the demo self-healing when an existing local SQLite database predates
+    # the escalation fields. Production deployments should use Alembic migrations.
+    with engine.begin() as connection:
+        if settings.database_url.startswith("sqlite"):
+            existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tickets)").fetchall()}
+            columns = {
+                "sla_due_at": "DATETIME",
+                "escalated_at": "DATETIME",
+                "escalation_reason": "TEXT",
+            }
+            for name, column_type in columns.items():
+                if name not in existing:
+                    connection.exec_driver_sql(f"ALTER TABLE tickets ADD COLUMN {name} {column_type}")
+        else:
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_reason TEXT")
 
 
-def get_db():
+def get_db(): 
     db = SessionLocal()
     try:
         yield db

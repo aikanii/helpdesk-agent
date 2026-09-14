@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/models.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789425192030,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789425192030,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\n\nfrom datetime import datetime, timezone\nfrom typing import Any\n\nfrom sqlalchemy import DateTime, Integer, JSON, String, Text, create_engine\nfrom sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker\n\nfrom .core import settings\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\nclass Ticket(Base):\n    __tablename__ = \"tickets\"\n\n    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)\n    ticket_number: Mapped[str] = mapped_column(String(32), unique=True, index=True)\n    title: Mapped[str] = mapped_column(String(220))\n    description: Mapped[str] = mapped_column(Text)\n    category: Mapped[str] = mapped_column(String(64), default=\"General\")\n    priority: Mapped[str] = mapped_column(String(24), default=\"Medium\")\n    status: Mapped[str] = mapped_column(String(24), default=\"Open\")\n    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)\n    source: Mapped[str] = mapped_column(String(32), default=\"AI Agent\")\n    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)\n    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)\n    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)\n    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)\n    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))\n\n\nconnect_args = {\"check_same_thread\": False} if settings.database_url.startswith(\"sqlite\") else {}\nengine = create_engine(settings.database_url, connect_args=connect_args, future=True)\nSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)\n\n\ndef init_db() -> None:\n    Base.metadata.create_all(bind=engine)\n    # Keep the demo self-healing when an existing local SQLite database predates\n    # the escalation fields. Production deployments should use Alembic migrations.\n    with engine.begin() as connection:\n        if settings.database_url.startswith(\"sqlite\"):\n            existing = {row[1] for row in connection.exec_driver_sql(\"PRAGMA table_info(tickets)\").fetchall()}\n            columns = {\n                \"sla_due_at\": \"DATETIME\",\n                \"escalated_at\": \"DATETIME\",\n                \"escalation_reason\": \"TEXT\",\n            }\n            for name, column_type in columns.items():\n                if name not in existing:\n                    connection.exec_driver_sql(f\"ALTER TABLE tickets ADD COLUMN {name} {column_type}\")\n        else:\n            connection.exec_driver_sql(\"ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE\")\n            connection.exec_driver_sql(\"ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE\")\n            connection.exec_driver_sql(\"ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_reason TEXT\")\n\n\ndef get_db(): \n    db = SessionLocal()\n    try:\n        yield db\n    finally:\n        db.close()\n"
+        }
+    ]
+}

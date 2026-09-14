@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/schemas.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789425120095,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789425120095,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\n\nfrom datetime import datetime\nfrom typing import Any\n\nfrom pydantic import BaseModel, Field\n\n\nclass DiagnoseRequest(BaseModel):\n    message: str = Field(min_length=3, max_length=5000)\n    user_email: str = \"alex.morgan@acme.co\"\n    user_name: str = \"Alex Morgan\"\n    create_ticket: bool = True\n\n\nclass Evidence(BaseModel):\n    id: str\n    title: str\n    excerpt: str\n    score: float\n    type: str = \"Runbook\"\n\n\nclass Action(BaseModel):\n    label: str\n    detail: str\n    status: str = \"recommended\"\n\n\nclass DiagnoseResponse(BaseModel):\n    run_id: str\n    intent: str\n    confidence: int\n    summary: str\n    category: str\n    priority: str\n    actions: list[Action]\n    evidence: list[Evidence]\n    ticket: dict[str, Any] | None = None\n    agent_trace: list[str]\n\n\nclass TicketCreate(BaseModel):\n    title: str\n    description: str\n    category: str = \"General\"\n    priority: str = \"Medium\"\n    assignee: str | None = None\n    evidence: list[dict[str, Any]] = Field(default_factory=list)\n\n\nclass EscalationRequest(BaseModel):\n    reason: str | None = Field(default=None, max_length=500)\n\n\nclass TicketOut(BaseModel):\n    id: int\n    ticket_number: str\n    title: str\n    description: str\n    category: str\n    priority: str\n    status: str\n    assignee: str | None\n    source: str\n    evidence: list[dict[str, Any]]\n    sla_due_at: datetime | None\n    escalated_at: datetime | None\n    escalation_reason: str | None\n    created_at: datetime\n\n    model_config = {\"from_attributes\": True}\n\n\nclass DocumentOut(BaseModel):\n    id: str\n    title: str\n    content: str\n    category: str\n    updated: str\n"
+        }
+    ]
+}

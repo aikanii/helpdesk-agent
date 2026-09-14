@@ -49,6 +49,10 @@ class TicketCreate(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class EscalationRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class TicketOut(BaseModel):
     id: int
     ticket_number: str
@@ -60,6 +64,9 @@ class TicketOut(BaseModel):
     assignee: str | None
     source: str
     evidence: list[dict[str, Any]]
+    sla_due_at: datetime | None
+    escalated_at: datetime | None
+    escalation_reason: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

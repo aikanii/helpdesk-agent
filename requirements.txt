@@ -1,6 +1,6 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
-sqlalchemy==2.0.40
+sqlalchemy==2.0.52
 psycopg[binary]==3.2.13
 python-dotenv==1.1.0
 openai==1.75.0

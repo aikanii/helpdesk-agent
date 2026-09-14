@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1789425192030,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1789426015783,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,8 +1,8 @@\n from __future__ import annotations\n \n from datetime import datetime, timezone\n-from typing import Any\n+from typing import Any, Optional\n \n from sqlalchemy import DateTime, Integer, JSON, String, Text, create_engine\n from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker\n \n@@ -22,14 +22,14 @@\n     description: Mapped[str] = mapped_column(Text)\n     category: Mapped[str] = mapped_column(String(64), default=\"General\")\n     priority: Mapped[str] = mapped_column(String(24), default=\"Medium\")\n     status: Mapped[str] = mapped_column(String(24), default=\"Open\")\n-    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)\n+    assignee: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)\n     source: Mapped[str] = mapped_column(String(32), default=\"AI Agent\")\n     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)\n-    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)\n-    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)\n-    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)\n+    sla_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)\n+    escalated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)\n+    escalation_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)\n     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))\n \n \n connect_args = {\"check_same_thread\": False} if settings.database_url.startswith(\"sqlite\") else {}\n"
                 }
             ],
             "date": 1789425192030,

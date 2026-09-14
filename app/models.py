@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import DateTime, Integer, JSON, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -23,12 +23,12 @@ class Ticket(Base):
     category: Mapped[str] = mapped_column(String(64), default="General")
     priority: Mapped[str] = mapped_column(String(24), default="Medium")
     status: Mapped[str] = mapped_column(String(24), default="Open")
-    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    assignee: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     source: Mapped[str] = mapped_column(String(32), default="AI Agent")
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sla_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalation_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 

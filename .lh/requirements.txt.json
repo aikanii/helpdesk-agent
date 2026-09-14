@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1789425755005,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1789426015782,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,6 +1,6 @@\n fastapi==0.115.12\n uvicorn[standard]==0.34.0\n-sqlalchemy==2.0.40\n+sqlalchemy==2.0.52\n psycopg[binary]==3.2.13\n python-dotenv==1.1.0\n openai==1.75.0\n"
                 }
             ],
             "date": 1789425755005,

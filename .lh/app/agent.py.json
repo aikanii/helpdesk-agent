@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/agent.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789424902815,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789424902815,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\n\nimport uuid\nfrom datetime import timedelta\nfrom sqlalchemy.orm import Session\n\nfrom .llm import llm\nfrom .models import Ticket\nfrom .rag import index\nfrom .routing import route_ticket\n\n\nclass HelpdeskAgent:\n    def run(self, db: Session, message: str, user_email: str, user_name: str, create_ticket: bool = True) -> dict:\n        run_id = f\"run_{uuid.uuid4().hex[:8]}\"\n        trace = [\"Received issue and normalized user context\", \"Retrieved relevant support documentation\", \"Classified intent and estimated impact\"]\n        evidence = index.search(message)\n        analysis = llm.classify(message, evidence)\n        ticket_payload = None\n\n        if create_ticket:\n            ticket_number = f\"HD-{uuid.uuid4().hex[:6].upper()}\"\n            route = route_ticket(analysis[\"category\"], analysis[\"priority\"])\n            ticket = Ticket(\n                ticket_number=ticket_number,\n                title=analysis[\"intent\"],\n                description=f\"Reported by {user_name} ({user_email})\\n\\n{message}\",\n                category=analysis[\"category\"],\n                priority=analysis[\"priority\"],\n                status=\"Escalated\" if route[\"escalated\"] else \"Open\",\n                assignee=route[\"assignee\"],\n                source=\"AI Agent\",\n                evidence=evidence,\n                sla_due_at=route[\"sla_due_at\"],\n                escalated_at=route[\"sla_due_at\"] - timedelta(hours=2) if route[\"escalated\"] else None,\n                escalation_reason=route[\"escalation_reason\"],\n            )\n            db.add(ticket)\n            db.commit()\n            db.refresh(ticket)\n            ticket_payload = {\n                \"ticket_number\": ticket.ticket_number,\n                \"status\": ticket.status,\n                \"priority\": ticket.priority,\n                \"assignee\": ticket.assignee,\n                \"sla_due_at\": ticket.sla_due_at.isoformat() if ticket.sla_due_at else None,\n                \"escalation_reason\": ticket.escalation_reason,\n                \"created_at\": ticket.created_at.isoformat(),\n            }\n            if ticket.status == \"Escalated\":\n                trace.append(f\"Escalated {ticket.ticket_number} to {ticket.assignee} with a 2-hour SLA\")\n            else:\n                trace.append(f\"Created and routed ticket {ticket.ticket_number} to {ticket.assignee}\")\n        else:\n            trace.append(\"Ticket creation skipped by user\")\n\n        return {\n            \"run_id\": run_id,\n            \"intent\": analysis[\"intent\"],\n            \"confidence\": analysis[\"confidence\"],\n            \"summary\": analysis[\"summary\"],\n            \"category\": analysis[\"category\"],\n            \"priority\": analysis[\"priority\"],\n            \"actions\": analysis[\"actions\"],\n            \"evidence\": evidence,\n            \"ticket\": ticket_payload,\n            \"agent_trace\": trace,\n        }\n\n\nagent = HelpdeskAgent()\n"
+        }
+    ]
+}

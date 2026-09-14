@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from .llm import llm
 from .models import Ticket
 from .rag import index
+from .routing import route_ticket
 
 
 class HelpdeskAgent:
@@ -18,16 +20,20 @@ class HelpdeskAgent:
 
         if create_ticket:
             ticket_number = f"HD-{uuid.uuid4().hex[:6].upper()}"
+            route = route_ticket(analysis["category"], analysis["priority"])
             ticket = Ticket(
                 ticket_number=ticket_number,
                 title=analysis["intent"],
                 description=f"Reported by {user_name} ({user_email})\n\n{message}",
                 category=analysis["category"],
                 priority=analysis["priority"],
-                status="Open",
-                assignee="Service Desk",
+                status="Escalated" if route["escalated"] else "Open",
+                assignee=route["assignee"],
                 source="AI Agent",
                 evidence=evidence,
+                sla_due_at=route["sla_due_at"],
+                escalated_at=route["sla_due_at"] - timedelta(hours=2) if route["escalated"] else None,
+                escalation_reason=route["escalation_reason"],
             )
             db.add(ticket)
             db.commit()
@@ -37,9 +43,14 @@ class HelpdeskAgent:
                 "status": ticket.status,
                 "priority": ticket.priority,
                 "assignee": ticket.assignee,
+                "sla_due_at": ticket.sla_due_at.isoformat() if ticket.sla_due_at else None,
+                "escalation_reason": ticket.escalation_reason,
                 "created_at": ticket.created_at.isoformat(),
             }
-            trace.append(f"Created and routed ticket {ticket.ticket_number}")
+            if ticket.status == "Escalated":
+                trace.append(f"Escalated {ticket.ticket_number} to {ticket.assignee} with a 2-hour SLA")
+            else:
+                trace.append(f"Created and routed ticket {ticket.ticket_number} to {ticket.assignee}")
         else:
             trace.append("Ticket creation skipped by user")
 

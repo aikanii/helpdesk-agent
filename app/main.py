@@ -15,7 +15,8 @@ from .agent import agent
 from .core import settings
 from .models import SessionLocal, Ticket, init_db
 from .rag import index
-from .schemas import DiagnoseRequest, DiagnoseResponse, DocumentOut, TicketCreate, TicketOut
+from .routing import route_ticket
+from .schemas import DiagnoseRequest, DiagnoseResponse, DocumentOut, EscalationRequest, TicketCreate, TicketOut
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -42,6 +43,13 @@ def seed_demo_data() -> None:
                 Ticket(ticket_number="HD-9AA013", title="Slack messages delayed", description="Messages are delayed for a small team.", category="Service Health", priority="Low", status="Open", assignee="Service Desk", source="AI Agent", evidence=index.search("Slack delayed"), created_at=now - timedelta(hours=5)),
                 Ticket(ticket_number="HD-2B7E04", title="Laptop running slowly", description="Laptop performance degraded since the latest update.", category="Endpoint", priority="Medium", status="Resolved", assignee="Endpoint Support", source="Portal", evidence=index.search("laptop slow"), created_at=now - timedelta(days=1, hours=3)),
             ]
+            for ticket in demo:
+                route = route_ticket(ticket.category, ticket.priority)
+                ticket.sla_due_at = route["sla_due_at"]
+                if route["escalated"]:
+                    ticket.status = "Escalated"
+                    ticket.escalated_at = now - timedelta(minutes=10)
+                    ticket.escalation_reason = route["escalation_reason"]
             db.add_all(demo)
             db.commit()
     finally:
@@ -80,6 +88,7 @@ def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {
         "open": len(open_tickets),
         "urgent": len(urgent),
+        "escalated": len([ticket for ticket in tickets if ticket.status == "Escalated"]),
         "resolved": len([ticket for ticket in tickets if ticket.status == "Resolved"]),
         "automation_rate": 84,
         "avg_response": "4m 18s",
@@ -111,8 +120,35 @@ def list_tickets(
 @app.post("/api/tickets", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
     number = f"HD-{datetime.now(timezone.utc).strftime('%m%d%H%M')}"
-    ticket = Ticket(ticket_number=number, source="Portal", status="Open", **payload.model_dump())
+    route = route_ticket(payload.category, payload.priority)
+    ticket = Ticket(
+        ticket_number=number,
+        source="Portal",
+        status="Escalated" if route["escalated"] else "Open",
+        assignee=payload.assignee or route["assignee"],
+        sla_due_at=route["sla_due_at"],
+        escalated_at=datetime.now(timezone.utc) if route["escalated"] else None,
+        escalation_reason=route["escalation_reason"],
+        **payload.model_dump(exclude={"assignee"}),
+    )
     db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+@app.post("/api/tickets/{ticket_id}/escalate", response_model=TicketOut)
+def escalate_ticket(ticket_id: int, payload: EscalationRequest, db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    route = route_ticket(ticket.category, "High", force_escalation=True)
+    ticket.priority = "High"
+    ticket.status = "Escalated"
+    ticket.assignee = route["assignee"]
+    ticket.sla_due_at = route["sla_due_at"]
+    ticket.escalated_at = datetime.now(timezone.utc)
+    ticket.escalation_reason = payload.reason or "Escalated manually by an agent"
     db.commit()
     db.refresh(ticket)
     return ticket
@@ -123,7 +159,7 @@ def update_ticket_status(ticket_id: int, status: str, db: Session = Depends(get_
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    if status not in {"Open", "In progress", "Resolved"}:
+    if status not in {"Open", "In progress", "Escalated", "Resolved"}:
         raise HTTPException(status_code=400, detail="Unsupported status")
     ticket.status = status
     db.commit()

@@ -70,6 +70,9 @@ async function loadDashboard() {
 function renderResult(result) {
   const panel = $('#resultPanel');
   const ticket = result.ticket;
+  const routingMessage = ticket?.status === 'Escalated'
+    ? `Escalated to ${escapeHtml(ticket.assignee || 'the owning team')} · 2-hour SLA`
+    : `Routed to ${escapeHtml(ticket?.assignee || 'Service Desk')}`;
   panel.innerHTML = `
     <div class="result-header">
       <div><div class="result-kicker">✦ DIAGNOSIS COMPLETE · ${escapeHtml(result.run_id)}</div><h2>${escapeHtml(result.intent)}</h2><p>${escapeHtml(result.summary)} <span class="status-pill ${priorityClass(result.priority)}">${escapeHtml(result.priority)} priority</span></p></div>
@@ -79,7 +82,7 @@ function renderResult(result) {
       <div><h4>RECOMMENDED NEXT STEPS</h4><div class="action-list">${result.actions.map((action, index) => `<div class="action-item"><span class="action-number">${index + 1}</span><div><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.detail)}</p></div></div>`).join('')}</div></div>
       <div><h4>RETRIEVED EVIDENCE</h4><div class="evidence-list">${result.evidence.length ? result.evidence.map(doc => `<div class="evidence-item"><strong>${escapeHtml(doc.title)}</strong><p>${escapeHtml(doc.excerpt)}</p><span>${Math.round(doc.score * 100)}% relevance</span></div>`).join('') : '<div class="evidence-item"><p>No matching documents found. Add a runbook to improve future diagnoses.</p></div>'}</div></div>
     </div>
-    <div class="result-footer"><span>${result.agent_trace.map(escapeHtml).join(' · ')}</span>${ticket ? `<span class="ticket-created">Ticket ${escapeHtml(ticket.ticket_number)} created and routed →</span>` : '<span>Ticket creation was skipped</span>'}</div>`;
+    <div class="result-footer"><span>${result.agent_trace.map(escapeHtml).join(' · ')}</span>${ticket ? `<span class="ticket-created">Ticket ${escapeHtml(ticket.ticket_number)} · ${routingMessage} →</span>` : '<span>Ticket creation was skipped</span>'}</div>`;
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -105,7 +108,7 @@ $('#issueInput').addEventListener('keydown', (event) => { if ((event.metaKey || 
 $('.suggestions').addEventListener('click', (event) => { const prompt = event.target.closest('[data-prompt]')?.dataset.prompt; if (prompt) { $('#issueInput').value = prompt; $('#issueInput').focus(); } });
 $('#newRequestBtn').addEventListener('click', () => { $('#issueInput').value = ''; $('#issueInput').focus(); $('#resultPanel').classList.add('hidden'); });
 $('#statusFilter').addEventListener('click', () => {
-  const options = ['All', 'Open', 'In progress', 'Resolved'];
+  const options = ['All', 'Open', 'In progress', 'Escalated', 'Resolved'];
   const current = $('#statusFilter').dataset.value || 'All';
   const next = options[(options.indexOf(current) + 1) % options.length];
   $('#statusFilter').dataset.value = next; $('#statusFilter').innerHTML = `${next === 'All' ? 'All statuses' : next} <span>⌄</span>`;

@@ -1,0 +1,18 @@
+{
+    "sourceFile": "requirements.txt",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789425755005,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789425755005,
+            "name": "Commit-0",
+            "content": "fastapi==0.115.12\nuvicorn[standard]==0.34.0\nsqlalchemy==2.0.40\npsycopg[binary]==3.2.13\npython-dotenv==1.1.0\nopenai==1.75.0\n"
+        }
+    ]
+}

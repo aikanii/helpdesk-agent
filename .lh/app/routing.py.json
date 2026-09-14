@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/routing.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789425422481,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789425422481,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nfrom datetime import datetime, timedelta, timezone\r\n\r\n\r\nTEAM_BY_CATEGORY = {\r\n    \"Access & Identity\": \"Identity Operations\",\r\n    \"Service Health\": \"Service Operations\",\r\n    \"Endpoint\": \"Endpoint Support\",\r\n    \"Messaging\": \"Messaging Operations\",\r\n    \"General\": \"Service Desk\",\r\n}\r\n\r\nSLA_HOURS_BY_PRIORITY = {\r\n    \"High\": 4,\r\n    \"Medium\": 8,\r\n    \"Low\": 24,\r\n}\r\n\r\n\r\ndef route_ticket(category: str, priority: str, force_escalation: bool = False) -> dict:\r\n    \"\"\"Return the owning team, SLA deadline, and escalation state for a ticket.\"\"\"\r\n    now = datetime.now(timezone.utc)\r\n    is_escalated = force_escalation or priority == \"High\"\r\n    # High-impact incidents get a tighter SLA when they are escalated.\r\n    hours = 2 if is_escalated else SLA_HOURS_BY_PRIORITY.get(priority, 24)\r\n    return {\r\n        \"assignee\": TEAM_BY_CATEGORY.get(category, TEAM_BY_CATEGORY[\"General\"]),\r\n        \"sla_due_at\": now + timedelta(hours=hours),\r\n        \"escalated\": is_escalated,\r\n        \"escalation_reason\": \"High-priority issue automatically routed by Relay\" if is_escalated else None,\r\n    }\r\n"
+        }
+    ]
+}

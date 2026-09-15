@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/rag.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789482616284,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789482616284,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\n\nimport json\nimport re\nimport uuid\nfrom pathlib import Path\nfrom dataclasses import asdict, dataclass\nfrom datetime import datetime\n\nfrom .core import settings\n\n\n@dataclass\nclass Document:\n    id: str\n    title: str\n    content: str\n    category: str\n    updated: str\n    source: str = \"Seed runbook\"\n\n\nclass DocumentationIndex:\n    \"\"\"Small lexical retriever for the MVP; replace with pgvector embeddings in production.\"\"\"\n\n    def __init__(self) -> None:\n        self.path = settings.base_dir / \"data\" / \"documents.json\"\n        self.documents: list[Document] = []\n        self.reload()\n\n    def reload(self) -> None:\n        self.documents = [Document(**item) for item in json.loads(self.path.read_text())]\n\n    @staticmethod\n    def _tokens(text: str) -> set[str]:\n        return {word for word in re.findall(r\"[a-z0-9]+\", text.lower()) if len(word) > 2}\n\n    def search(self, query: str | None, limit: int = 4) -> list[dict]:\n        if not query:\n            return [asdict(doc) for doc in self.documents[:limit]]\n        query_tokens = self._tokens(query)\n        scored: list[tuple[float, Document]] = []\n        for doc in self.documents:\n            doc_tokens = self._tokens(f\"{doc.title} {doc.content} {doc.category}\")\n            overlap = query_tokens & doc_tokens\n            title_overlap = query_tokens & self._tokens(doc.title)\n            score = len(overlap) + (len(title_overlap) * 1.5)\n            if score:\n                scored.append((score, doc))\n        scored.sort(key=lambda item: item[0], reverse=True)\n        results = []\n        for score, doc in scored[:limit]:\n            excerpt = doc.content[:190].rstrip()\n            if len(doc.content) > 190:\n                excerpt += \"…\"\n            results.append({\n                **asdict(doc),\n                \"excerpt\": excerpt,\n                \"score\": round(min(score / max(len(query_tokens), 1), 0.99), 2),\n                \"type\": \"Runbook\",\n            })\n        return results\n\n    def all(self) -> list[dict]:\n        return [asdict(doc) for doc in self.documents]\n\n    def add(self, title: str, content: str, category: str = \"General\", source: str = \"Uploaded runbook\") -> dict:\n        document = Document(\n            id=f\"doc-{uuid.uuid4().hex[:8]}\",\n            title=title.strip(),\n            content=content.strip(),\n            category=category.strip() or \"General\",\n            updated=datetime.now().strftime(\"%b %d, %Y\"),\n            source=source.strip() or \"Uploaded runbook\",\n        )\n        self.documents.append(document)\n        self._persist()\n        return asdict(document)\n\n    def delete(self, doc_id: str) -> bool:\n        original_count = len(self.documents)\n        self.documents = [doc for doc in self.documents if doc.id != doc_id]\n        if len(self.documents) == original_count:\n            return False\n        self._persist()\n        return True\n\n    def _persist(self) -> None:\n        self.path.write_text(json.dumps([asdict(doc) for doc in self.documents], indent=2) + \"\\n\")\n\n\nindex = DocumentationIndex()\n"
+        }
+    ]
+}

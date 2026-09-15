@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 2,
+            "activePatchIndex": 3,
             "patches": [
                 {
                     "date": 1789425120095,
@@ -16,6 +16,10 @@
                 {
                     "date": 1789483835588,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -5,8 +5,38 @@\n \n from pydantic import BaseModel, Field\n \n \n+class LoginRequest(BaseModel):\n+    username: str = Field(min_length=3, max_length=180)\n+    password: str = Field(min_length=8, max_length=200)\n+\n+\n+class TokenOut(BaseModel):\n+    access_token: str\n+    token_type: str = \"bearer\"\n+    expires_in: int\n+    user: dict[str, Any]\n+\n+\n+class UserOut(BaseModel):\n+    id: int\n+    email: str\n+    full_name: str\n+    role: str\n+    is_active: bool\n+    created_at: datetime\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n+class UserCreate(BaseModel):\n+    email: str = Field(min_length=5, max_length=180)\n+    full_name: str = Field(min_length=2, max_length=120)\n+    password: str = Field(min_length=8, max_length=200)\n+    role: str = Field(default=\"requester\", pattern=\"^(requester|agent|manager|admin)$\")\n+\n+\n class DiagnoseRequest(BaseModel):\n     message: str = Field(min_length=3, max_length=5000)\n     user_email: str = \"alex.morgan@acme.co\"\n     user_name: str = \"Alex Morgan\"\n@@ -83,8 +113,9 @@\n     id: int\n     ticket_number: str\n     title: str\n     description: str\n+    requester_email: str | None\n     category: str\n     priority: str\n     status: str\n     assignee: str | None\n"
+                },
+                {
+                    "date": 1789486226202,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -123,8 +123,13 @@\n     evidence: list[dict[str, Any]]\n     sla_due_at: datetime | None\n     escalated_at: datetime | None\n     escalation_reason: str | None\n+    external_provider: str | None\n+    external_id: str | None\n+    external_url: str | None\n+    last_synced_at: datetime | None\n+    sync_error: str | None\n     created_at: datetime\n \n     model_config = {\"from_attributes\": True}\n \n"
                 }
             ],
             "date": 1789425120095,

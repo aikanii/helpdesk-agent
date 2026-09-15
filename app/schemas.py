@@ -124,6 +124,11 @@ class TicketOut(BaseModel):
     sla_due_at: datetime | None
     escalated_at: datetime | None
     escalation_reason: str | None
+    external_provider: str | None
+    external_id: str | None
+    external_url: str | None
+    last_synced_at: datetime | None
+    sync_error: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -20,6 +20,13 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}
       ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
+      JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}
+      JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}
+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}
     ports:
       - "8000:8000"
     depends_on:

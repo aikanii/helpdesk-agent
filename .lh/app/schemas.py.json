@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1789425120095,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1789482830606,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -20,8 +20,34 @@\n     score: float\n     type: str = \"Runbook\"\n \n \n+class ChatRequest(BaseModel):\n+    message: str = Field(min_length=3, max_length=5000)\n+    user_email: str = \"alex.morgan@acme.co\"\n+    user_name: str = \"Alex Morgan\"\n+    create_ticket: bool = True\n+\n+\n+class FeedbackRequest(BaseModel):\n+    run_id: str = Field(min_length=3, max_length=40)\n+    ticket_number: str | None = None\n+    rating: str = Field(pattern=\"^(helpful|not_helpful)$\")\n+    comment: str | None = Field(default=None, max_length=1000)\n+\n+\n+class EventCreate(BaseModel):\n+    message: str = Field(min_length=2, max_length=2000)\n+    actor: str = \"Alex Morgan\"\n+\n+\n+class KnowledgeCreate(BaseModel):\n+    title: str = Field(min_length=3, max_length=220)\n+    content: str = Field(min_length=20, max_length=20000)\n+    category: str = Field(default=\"General\", max_length=64)\n+    source: str = Field(default=\"Uploaded runbook\", max_length=120)\n+\n+\n class Action(BaseModel):\n     label: str\n     detail: str\n     status: str = \"recommended\"\n@@ -77,4 +103,44 @@\n     title: str\n     content: str\n     category: str\n     updated: str\n+    source: str = \"Seed runbook\"\n+\n+\n+class ConversationCreate(BaseModel):\n+    user_name: str = \"Alex Morgan\"\n+    user_email: str = \"alex.morgan@acme.co\"\n+\n+\n+class ConversationMessageOut(BaseModel):\n+    id: int\n+    role: str\n+    content: str\n+    payload: dict[str, Any] | None\n+    created_at: datetime\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n+class ConversationOut(BaseModel):\n+    id: str\n+    user_name: str\n+    user_email: str\n+    status: str\n+    created_at: datetime\n+    updated_at: datetime\n+    messages: list[ConversationMessageOut] = Field(default_factory=list)\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n+class TicketEventOut(BaseModel):\n+    id: int\n+    ticket_id: int\n+    event_type: str\n+    actor: str\n+    message: str\n+    details: dict[str, Any] | None\n+    created_at: datetime\n+\n+    model_config = {\"from_attributes\": True}\n"
                 }
             ],
             "date": 1789425120095,

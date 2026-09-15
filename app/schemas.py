@@ -21,6 +21,32 @@ class Evidence(BaseModel):
     type: str = "Runbook"
 
 
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=5000)
+    user_email: str = "alex.morgan@acme.co"
+    user_name: str = "Alex Morgan"
+    create_ticket: bool = True
+
+
+class FeedbackRequest(BaseModel):
+    run_id: str = Field(min_length=3, max_length=40)
+    ticket_number: str | None = None
+    rating: str = Field(pattern="^(helpful|not_helpful)$")
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class EventCreate(BaseModel):
+    message: str = Field(min_length=2, max_length=2000)
+    actor: str = "Alex Morgan"
+
+
+class KnowledgeCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=220)
+    content: str = Field(min_length=20, max_length=20000)
+    category: str = Field(default="General", max_length=64)
+    source: str = Field(default="Uploaded runbook", max_length=120)
+
+
 class Action(BaseModel):
     label: str
     detail: str
@@ -78,3 +104,43 @@ class DocumentOut(BaseModel):
     content: str
     category: str
     updated: str
+    source: str = "Seed runbook"
+
+
+class ConversationCreate(BaseModel):
+    user_name: str = "Alex Morgan"
+    user_email: str = "alex.morgan@acme.co"
+
+
+class ConversationMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    payload: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationOut(BaseModel):
+    id: str
+    user_name: str
+    user_email: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class TicketEventOut(BaseModel):
+    id: int
+    ticket_id: int
+    event_type: str
+    actor: str
+    message: str
+    details: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

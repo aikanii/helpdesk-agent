@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 3,
+            "activePatchIndex": 4,
             "patches": [
                 {
                     "date": 1789425120095,
@@ -20,6 +20,10 @@
                 {
                     "date": 1789486226202,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -123,8 +123,13 @@\n     evidence: list[dict[str, Any]]\n     sla_due_at: datetime | None\n     escalated_at: datetime | None\n     escalation_reason: str | None\n+    external_provider: str | None\n+    external_id: str | None\n+    external_url: str | None\n+    last_synced_at: datetime | None\n+    sync_error: str | None\n     created_at: datetime\n \n     model_config = {\"from_attributes\": True}\n \n"
+                },
+                {
+                    "date": 1789490795117,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -74,8 +74,10 @@\n     title: str = Field(min_length=3, max_length=220)\n     content: str = Field(min_length=20, max_length=20000)\n     category: str = Field(default=\"General\", max_length=64)\n     source: str = Field(default=\"Uploaded runbook\", max_length=120)\n+    source_url: str | None = Field(default=None, max_length=500)\n+    min_role: str = Field(default=\"requester\", pattern=\"^(requester|agent|manager|admin)$\")\n \n \n class Action(BaseModel):\n     label: str\n@@ -140,8 +142,12 @@\n     content: str\n     category: str\n     updated: str\n     source: str = \"Seed runbook\"\n+    source_url: str | None = None\n+    min_role: str = \"requester\"\n+    status: str = \"indexed\"\n+    chunk_count: int = 0\n \n \n class ConversationCreate(BaseModel):\n     user_name: str = \"Alex Morgan\"\n"
                 }
             ],
             "date": 1789425120095,

@@ -75,6 +75,8 @@ class KnowledgeCreate(BaseModel):
     content: str = Field(min_length=20, max_length=20000)
     category: str = Field(default="General", max_length=64)
     source: str = Field(default="Uploaded runbook", max_length=120)
+    source_url: str | None = Field(default=None, max_length=500)
+    min_role: str = Field(default="requester", pattern="^(requester|agent|manager|admin)$")
 
 
 class Action(BaseModel):
@@ -141,6 +143,10 @@ class DocumentOut(BaseModel):
     category: str
     updated: str
     source: str = "Seed runbook"
+    source_url: str | None = None
+    min_role: str = "requester"
+    status: str = "indexed"
+    chunk_count: int = 0
 
 
 class ConversationCreate(BaseModel):

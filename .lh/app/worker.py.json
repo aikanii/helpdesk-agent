@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/worker.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789495727486,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789495727486,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nimport signal\r\nimport time\r\n\r\nfrom .job_queue import worker\r\nfrom .models import init_db\r\n\r\n\r\nstopping = False\r\n\r\n\r\ndef stop_worker(*_: object) -> None:\r\n    global stopping\r\n    stopping = True\r\n    worker.stop()\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    init_db()\r\n    signal.signal(signal.SIGTERM, stop_worker)\r\n    signal.signal(signal.SIGINT, stop_worker)\r\n    worker.start()\r\n    while not stopping:\r\n        time.sleep(1)\r\n"
+        }
+    ]
+}

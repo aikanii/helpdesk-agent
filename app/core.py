@@ -14,6 +14,7 @@ class Settings(BaseModel):
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./helpdesk.db")
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     jwt_secret: str = os.getenv("JWT_SECRET", "local-only-change-this-secret")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "480"))

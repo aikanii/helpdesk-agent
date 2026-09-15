@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/core.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789483778521,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789483778521,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\n\nimport os\nfrom pathlib import Path\n\nfrom dotenv import load_dotenv\nfrom pydantic import BaseModel\n\nload_dotenv()\n\n\nclass Settings(BaseModel):\n    app_name: str = \"Relay Helpdesk\"\n    database_url: str = os.getenv(\"DATABASE_URL\", \"sqlite:///./helpdesk.db\")\n    openai_api_key: str | None = os.getenv(\"OPENAI_API_KEY\")\n    openai_model: str = os.getenv(\"OPENAI_MODEL\", \"gpt-4o-mini\")\n    cors_origins: str = os.getenv(\"CORS_ORIGINS\", \"*\")\n    base_dir: Path = Path(__file__).resolve().parent\n\n\nsettings = Settings()\n"
+        }
+    ]
+}

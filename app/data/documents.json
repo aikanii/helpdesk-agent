@@ -2,36 +2,41 @@
   {
     "id": "doc-vpn-001",
     "title": "VPN connection troubleshooting",
+    "content": "If the VPN client cannot connect, confirm the user has internet access, sign out of the client, and reconnect with the current company profile. Verify MFA is completing and the device clock is accurate. If the tunnel still fails, collect the client logs from Help > Diagnostics and route to Network Operations.",
     "category": "Access & Identity",
     "updated": "Sep 08, 2026",
-    "content": "If the VPN client cannot connect, confirm the user has internet access, sign out of the client, and reconnect with the current company profile. Verify MFA is completing and the device clock is accurate. If the tunnel still fails, collect the client logs from Help > Diagnostics and route to Network Operations."
+    "source": "Seed runbook"
   },
   {
     "id": "doc-password-014",
     "title": "Password reset and locked account",
+    "content": "Users can reset a forgotten password from the identity portal. A locked account should be checked for repeated attempts, stale mobile credentials, and MFA availability. Never request a user's password. Escalate identity verification issues to Identity Operations.",
     "category": "Access & Identity",
     "updated": "Aug 29, 2026",
-    "content": "Users can reset a forgotten password from the identity portal. A locked account should be checked for repeated attempts, stale mobile credentials, and MFA availability. Never request a user's password. Escalate identity verification issues to Identity Operations."
+    "source": "Seed runbook"
   },
   {
     "id": "doc-slack-022",
     "title": "Slack and collaboration service checks",
+    "content": "For Slack or collaboration errors, check the company status page first, then test in a private browser window. Capture the workspace, channel, timestamp, and error text. If multiple teams are affected, link the existing incident rather than opening duplicate tickets.",
     "category": "Service Health",
     "updated": "Sep 11, 2026",
-    "content": "For Slack or collaboration errors, check the company status page first, then test in a private browser window. Capture the workspace, channel, timestamp, and error text. If multiple teams are affected, link the existing incident rather than opening duplicate tickets."
+    "source": "Seed runbook"
   },
   {
     "id": "doc-laptop-009",
     "title": "Laptop performance quick checks",
+    "content": "For a slow laptop, check available disk space, pending operating system updates, and CPU or memory pressure. Restart after updates and capture a screenshot of any recurring error. Hardware failures should be routed to Endpoint Support with the asset tag.",
     "category": "Endpoint",
     "updated": "Aug 17, 2026",
-    "content": "For a slow laptop, check available disk space, pending operating system updates, and CPU or memory pressure. Restart after updates and capture a screenshot of any recurring error. Hardware failures should be routed to Endpoint Support with the asset tag."
+    "source": "Seed runbook"
   },
   {
     "id": "doc-email-031",
     "title": "Email delivery and phishing reports",
+    "content": "For missing email, verify the recipient address, quarantine, mailbox rules, and whether the sender received a bounce. Suspicious messages should be reported with the original message attached. Do not click links or forward potential phishing content outside the security workflow.",
     "category": "Messaging",
     "updated": "Sep 02, 2026",
-    "content": "For missing email, verify the recipient address, quarantine, mailbox rules, and whether the sender received a bounce. Suspicious messages should be reported with the original message attached. Do not click links or forward potential phishing content outside the security workflow."
+    "source": "Seed runbook"
   }
 ]

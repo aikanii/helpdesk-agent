@@ -110,6 +110,20 @@ def test_guardrails_redact_secrets_and_require_approval(client):
     assert approved.json()["requires_approval"] is False
 
 
+def test_ticket_lifecycle_transitions_and_resolution(client):
+    ticket = client.get("/api/tickets?status=Open").json()[0]
+    ticket_id = ticket["id"]
+    assert client.patch(f"/api/tickets/{ticket_id}/status?status=Pending").status_code == 200
+    assert client.patch(f"/api/tickets/{ticket_id}/status?status=In%20progress").status_code == 200
+    resolved = client.patch(f"/api/tickets/{ticket_id}/status?status=Resolved&resolution_code=Fixed")
+    assert resolved.status_code == 200
+    assert resolved.json()["resolution_code"] == "Fixed"
+    closed = client.patch(f"/api/tickets/{ticket_id}/status?status=Closed")
+    assert closed.status_code == 200
+    reopened = client.patch(f"/api/tickets/{ticket_id}/status?status=Reopened")
+    assert reopened.status_code == 200
+
+
 def test_ticket_timeline_and_manual_note(client):
     ticket = client.get("/api/tickets").json()[0]
     events = client.get(f"/api/tickets/{ticket['id']}/events")

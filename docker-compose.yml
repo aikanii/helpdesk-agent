@@ -29,6 +29,12 @@ services:
       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}
       RUN_WORKER: "false"
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-relay@acme.co}
+      SMTP_TLS: ${SMTP_TLS:-true}
     ports:
       - "8000:8000"
     depends_on:
@@ -54,6 +60,12 @@ services:
       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}
       RUN_WORKER: "false"
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-relay@acme.co}
+      SMTP_TLS: ${SMTP_TLS:-true}
     depends_on:
       - db
 

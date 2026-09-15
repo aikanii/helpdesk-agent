@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 3,
+            "activePatchIndex": 4,
             "patches": [
                 {
                     "date": 1789484330978,
@@ -20,6 +20,10 @@
                 {
                     "date": 1789495810823,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -15,8 +15,9 @@\n     environment:\n       DATABASE_URL: postgresql+psycopg://relay:relay@db:5432/relay\n       OPENAI_API_KEY: ${OPENAI_API_KEY:-}\n       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}\n+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}\n       JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}\n       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}\n       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}\n       ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}\n@@ -26,11 +27,35 @@\n       JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}\n       JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}\n       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}\n       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}\n+      RUN_WORKER: \"false\"\n     ports:\n       - \"8000:8000\"\n     depends_on:\n       - db\n \n+  worker:\n+    build: .\n+    command: [\"python\", \"-m\", \"app.worker\"]\n+    environment:\n+      DATABASE_URL: postgresql+psycopg://relay:relay@db:5432/relay\n+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}\n+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}\n+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}\n+      JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}\n+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}\n+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}\n+      ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}\n+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}\n+      JIRA_EMAIL: ${JIRA_EMAIL:-}\n+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}\n+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}\n+      JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}\n+      JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}\n+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}\n+      RUN_WORKER: \"false\"\n+    depends_on:\n+      - db\n+\n volumes:\n   relay_postgres_data:\n"
+                },
+                {
+                    "date": 1789497558532,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -28,8 +28,14 @@\n       JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}\n       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}\n       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}\n       RUN_WORKER: \"false\"\n+      SMTP_HOST: ${SMTP_HOST:-}\n+      SMTP_PORT: ${SMTP_PORT:-587}\n+      SMTP_USERNAME: ${SMTP_USERNAME:-}\n+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}\n+      SMTP_FROM: ${SMTP_FROM:-relay@acme.co}\n+      SMTP_TLS: ${SMTP_TLS:-true}\n     ports:\n       - \"8000:8000\"\n     depends_on:\n       - db\n@@ -53,8 +59,14 @@\n       JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}\n       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}\n       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}\n       RUN_WORKER: \"false\"\n+      SMTP_HOST: ${SMTP_HOST:-}\n+      SMTP_PORT: ${SMTP_PORT:-587}\n+      SMTP_USERNAME: ${SMTP_USERNAME:-}\n+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}\n+      SMTP_FROM: ${SMTP_FROM:-relay@acme.co}\n+      SMTP_TLS: ${SMTP_TLS:-true}\n     depends_on:\n       - db\n \n volumes:\n"
                 }
             ],
             "date": 1789484330978,

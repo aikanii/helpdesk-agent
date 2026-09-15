@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1789486560886,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1789491999270,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -10,8 +10,12 @@\n from .jira import JiraError, jira\r\n \r\n \r\n def sync_ticket_to_jira(db: Session, ticket: Ticket, force: bool = False, comment: str | None = None) -> dict[str, Any]:\r\n+    if ticket.requires_approval and not ticket.approved_by:\r\n+        if force:\r\n+            raise JiraError(\"This ticket requires manager approval before external actions\")\r\n+        return {\"status\": \"blocked_by_policy\", \"provider\": \"jira\", \"error\": \"Approval required\"}\r\n     if not jira.configured:\r\n         if force:\r\n             raise JiraError(\"Jira integration is not configured\")\r\n         return {\"status\": \"not_configured\", \"provider\": \"jira\"}\r\n"
                 }
             ],
             "date": 1789486560886,

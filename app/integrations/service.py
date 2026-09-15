@@ -11,6 +11,10 @@ from .jira import JiraError, jira
 
 
 def sync_ticket_to_jira(db: Session, ticket: Ticket, force: bool = False, comment: str | None = None) -> dict[str, Any]:
+    if ticket.requires_approval and not ticket.approved_by:
+        if force:
+            raise JiraError("This ticket requires manager approval before external actions")
+        return {"status": "blocked_by_policy", "provider": "jira", "error": "Approval required"}
     if not jira.configured:
         if force:
             raise JiraError("Jira integration is not configured")

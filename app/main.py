@@ -21,7 +21,8 @@ from .integrations.jira import JiraError, jira
 from .integrations.service import sync_ticket_to_jira
 from .job_queue import dispatch_jira_sync, enqueue_sla_scan, queue, worker
 from .lifecycle import RESOLUTION_CODES, validate_transition
-from .models import AgentFeedback, Conversation, ConversationMessage, Job, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
+from .models import AgentFeedback, Conversation, ConversationMessage, Job, Notification, NotificationPreference, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
+from .notifications import get_preferences, notify_ticket, notify_user_ids
 from .rag import ROLE_RANK, index
 from .routing import route_ticket
 from .schemas import (
@@ -45,6 +46,9 @@ from .schemas import (
     TicketOut,
     TicketStatusUpdate,
     LinkRequest,
+    NotificationOut,
+    NotificationPreferenceOut,
+    NotificationPreferenceUpdate,
     WatcherRequest,
     UserCreate,
     UserOut,
@@ -239,6 +243,50 @@ def jira_webhook(payload: dict[str, Any], x_jira_webhook_token: str | None = Hea
     return {"status": "updated", "ticket_number": ticket.ticket_number, "relay_status": ticket.status}
 
 
+@app.get("/api/notifications", response_model=list[NotificationOut])
+def list_notifications(unread_only: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = select(Notification).where(Notification.user_id == current_user.id).order_by(Notification.created_at.desc()).limit(50)
+    if unread_only:
+        query = query.where(Notification.read_at.is_(None))
+    return db.scalars(query).all()
+
+
+@app.patch("/api/notifications/{notification_id}/read", response_model=NotificationOut)
+def mark_notification_read(notification_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notification = db.get(Notification, notification_id)
+    if not notification or notification.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notification.read_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
+@app.post("/api/notifications/read-all")
+def mark_all_notifications_read(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notifications = db.scalars(select(Notification).where(Notification.user_id == current_user.id, Notification.read_at.is_(None))).all()
+    now = datetime.now(timezone.utc)
+    for notification in notifications:
+        notification.read_at = now
+    db.commit()
+    return {"status": "ok", "updated": len(notifications)}
+
+
+@app.get("/api/notifications/preferences", response_model=NotificationPreferenceOut)
+def get_notification_preferences(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return get_preferences(db, current_user.id)
+
+
+@app.put("/api/notifications/preferences", response_model=NotificationPreferenceOut)
+def update_notification_preferences(payload: NotificationPreferenceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    preferences = get_preferences(db, current_user.id)
+    for key, value in payload.model_dump().items():
+        setattr(preferences, key, value)
+    db.commit()
+    db.refresh(preferences)
+    return preferences
+
+
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"status": "ok", "service": settings.app_name, "jobs": queue.stats(db)}
@@ -430,6 +478,7 @@ def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = 
     db.add(event)
     db.commit()
     db.refresh(event)
+    notify_ticket(db, ticket, "comment", f"New update on {ticket.ticket_number}", payload.message, f"comment:{event.id}")
     dispatch_jira_sync(db, ticket, comment=payload.message)
     return event
 
@@ -474,6 +523,7 @@ async def upload_ticket_attachment(
     record_event(db, ticket_id, "attachment", f"Attachment uploaded: {safe_name}", actor=current_user.full_name, visibility="internal" if current_user.role != "requester" else "public")
     db.commit()
     db.refresh(attachment)
+    notify_ticket(db, ticket, "attachment", f"New attachment on {ticket.ticket_number}", f"{safe_name} was added to the ticket.", f"attachment:{attachment.id}")
     return attachment
 
 
@@ -587,6 +637,7 @@ def create_ticket(payload: TicketCreate, current_user: User = Depends(get_curren
     if ticket.status == "Escalated":
         record_event(db, ticket.id, "escalated", ticket.escalation_reason or "High-priority ticket escalated")
     db.commit()
+    notify_ticket(db, ticket, "ticket_created", f"Ticket created: {ticket.ticket_number}", f"Your request was received and routed to {ticket.assignee}.", "created")
     dispatch_jira_sync(db, ticket)
     return ticket
 
@@ -603,6 +654,7 @@ def approve_ticket(ticket_id: int, current_user: User = Depends(require_roles("m
         ticket.status = "Escalated" if ticket.priority == "High" else "Open"
     record_event(db, ticket.id, "approval", "Safety review approved by manager", actor=current_user.full_name)
     db.commit()
+    notify_ticket(db, ticket, "approval", f"Ticket approved: {ticket.ticket_number}", "A manager approved the safety review and automation can continue.", "approved")
     if jira.configured:
         try:
             dispatch_jira_sync(db, ticket)
@@ -644,6 +696,7 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
     db.refresh(ticket)
     record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor=current_user.full_name)
     db.commit()
+    notify_ticket(db, ticket, "escalation", f"Ticket escalated: {ticket.ticket_number}", ticket.escalation_reason, "escalated")
     dispatch_jira_sync(db, ticket, comment=ticket.escalation_reason)
     return ticket
 
@@ -689,6 +742,7 @@ def update_ticket_status(
             detail += f" ({ticket.resolution_code})"
         record_event(db, ticket.id, "status_changed", detail, actor=current_user.full_name)
         db.commit()
+        notify_ticket(db, ticket, "status_change", f"Ticket {ticket.ticket_number}: {ticket.status}", detail, f"status:{ticket.status}:{ticket.resolution_code or ''}")
         dispatch_jira_sync(db, ticket, comment=detail)
     return ticket
 

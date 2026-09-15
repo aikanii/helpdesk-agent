@@ -32,6 +32,18 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class RoutingRule(Base):
+    __tablename__ = "routing_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    team: Mapped[str] = mapped_column(String(120))
+    sla_hours: Mapped[int] = mapped_column(Integer, default=24)
+    auto_escalate_high: Mapped[bool] = mapped_column(default=True)
+    updated_by: Mapped[str] = mapped_column(String(180), default="system")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
@@ -158,6 +170,32 @@ class AgentFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(48), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    notification_type: Mapped[str] = mapped_column(String(32), default="info")
+    title: Mapped[str] = mapped_column(String(180))
+    message: Mapped[str] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(180), unique=True, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    in_app_enabled: Mapped[bool] = mapped_column(default=True)
+    email_enabled: Mapped[bool] = mapped_column(default=True)
+    email_on_assignment: Mapped[bool] = mapped_column(default=True)
+    email_on_status_change: Mapped[bool] = mapped_column(default=True)
+    email_on_sla_breach: Mapped[bool] = mapped_column(default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
@@ -175,37 +213,6 @@ class Job(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class Notification(Base):
-    __tablename__ = "notifications"
-
-    id: Mapped[str] = mapped_column(String(48), primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True, index=True)
-    notification_type: Mapped[str] = mapped_column(String(48), index=True)
-    title: Mapped[str] = mapped_column(String(220))
-    body: Mapped[str] = mapped_column(Text)
-    channel: Mapped[str] = mapped_column(String(24), default="in_app")
-    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
-    notification_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(180), unique=True, nullable=True, index=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class NotificationPreference(Base):
-    __tablename__ = "notification_preferences"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    in_app_enabled: Mapped[bool] = mapped_column(default=True)
-    email_enabled: Mapped[bool] = mapped_column(default=True)
-    email_on_assignment: Mapped[bool] = mapped_column(default=True)
-    email_on_status_change: Mapped[bool] = mapped_column(default=True)
-    email_on_sla_breach: Mapped[bool] = mapped_column(default=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}

@@ -110,6 +110,18 @@ def test_guardrails_redact_secrets_and_require_approval(client):
     assert approved.json()["requires_approval"] is False
 
 
+def test_notifications_and_preferences(client):
+    notifications = client.get("/api/notifications").json()
+    assert isinstance(notifications, list)
+    preferences = client.get("/api/notifications/preferences")
+    assert preferences.status_code == 200
+    updated = client.put("/api/notifications/preferences", json={"in_app_enabled": True, "email_enabled": False, "email_on_assignment": True, "email_on_status_change": True, "email_on_sla_breach": True})
+    assert updated.status_code == 200
+    assert updated.json()["email_enabled"] is False
+    if notifications:
+        assert client.patch(f"/api/notifications/{notifications[0]['id']}/read").status_code == 200
+
+
 def test_ticket_lifecycle_transitions_and_resolution(client):
     ticket = client.get("/api/tickets?status=Open").json()[0]
     ticket_id = ticket["id"]

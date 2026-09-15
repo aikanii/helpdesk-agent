@@ -8,7 +8,22 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="authGate" class="auth-gate">
+      <div class="auth-card">
+        <div class="brand auth-brand"><span class="brand-mark"><span></span><span></span><span></span></span><span>relay</span></div>
+        <div class="auth-kicker">SECURE HELP DESK WORKSPACE</div>
+        <h1>Welcome back</h1>
+        <p class="auth-copy">Sign in to diagnose issues, manage tickets, and collaborate with your support team.</p>
+        <form id="loginForm" class="login-form">
+          <label>Email<input id="loginEmail" type="email" autocomplete="username" value="admin@acme.co" required /></label>
+          <label>Password<input id="loginPassword" type="password" autocomplete="current-password" value="relay-demo-2026" required /></label>
+          <button class="button primary login-button" type="submit">Sign in <span class="arrow">→</span></button>
+          <p id="loginError" class="login-error"></p>
+        </form>
+        <div class="demo-credentials"><span>DEMO ACCESS</span><strong><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="0e6f6a6367604e6f6d636b206d61">[email&#160;protected]</a></strong><small>Password: relay-demo-2026</small></div>
+      </div>
+    </section>
+    <div class="app-shell hidden-app" id="appShell">
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark"><span></span><span></span><span></span></span><span>relay</span></div>
         <div class="workspace-switcher"><div class="workspace-icon">A</div><div><strong>Acme, Inc.</strong><small>IT Operations</small></div><span class="chevron">⌄</span></div>
@@ -24,12 +39,12 @@
         </nav>
         <div class="sidebar-footer">
           <div class="plan-card"><div class="plan-top"><span>AI AGENT USAGE</span><span>84%</span></div><div class="progress"><span style="width:84%"></span></div><p>420 of 500 automated runs</p><button>Manage plan <span>→</span></button></div>
-          <div class="profile"><div class="avatar purple">AM</div><div><strong>Alex Morgan</strong><small>Administrator</small></div><span class="dots">•••</span></div>
+          <div class="profile"><div class="avatar purple" id="profileAvatar">AM</div><div><strong id="profileName">Alex Morgan</strong><small id="profileRole">Administrator</small></div><span class="dots">•••</span></div>
         </div>
       </aside>
 
       <main class="main-content" id="overview">
-        <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><span>/</span><strong>Overview</strong></div><div class="top-actions"><button class="icon-button" aria-label="Search">⌕</button><button class="icon-button notification" aria-label="Notifications">♧<i></i></button><div class="top-avatar">AM</div></div></header>
+        <header class="topbar"><div class="breadcrumbs"><span>Workspace</span><span>/</span><strong>Overview</strong></div><div class="top-actions"><button class="icon-button" aria-label="Search">⌕</button><button class="icon-button notification" aria-label="Notifications">♧<i></i></button><div class="top-avatar" id="topAvatar">AM</div><button class="logout-button" id="logoutBtn">Sign out</button></div></header>
         <section class="page-heading"><div><p class="eyebrow">TUESDAY, SEPTEMBER 15, 2026</p><h1>Good morning, Alex <span class="wave">✦</span></h1><p class="subheading">Here's what your helpdesk needs attention on today.</p></div><button class="button secondary" id="newRequestBtn"><span>＋</span> New request</button></section>
 
         <section class="hero-grid">
@@ -60,6 +75,6 @@
       </section>
     </div>
     <div id="toast" class="toast"></div>
-    <script src="/static/app.js"></script>
-  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3b8577f8c564100',t:'MTc4OTQ4Mjc1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="/static/app.js"></script>
+  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3b87b22cc0bcdd2',t:'MTc4OTQ4NDIxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/integrations/service.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789486560886,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789486560886,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nfrom datetime import datetime, timezone\r\nfrom typing import Any\r\n\r\nfrom sqlalchemy.orm import Session\r\n\r\nfrom ..core import settings\r\nfrom ..models import Ticket, TicketEvent\r\nfrom .jira import JiraError, jira\r\n\r\n\r\ndef sync_ticket_to_jira(db: Session, ticket: Ticket, force: bool = False, comment: str | None = None) -> dict[str, Any]:\r\n    if not jira.configured:\r\n        if force:\r\n            raise JiraError(\"Jira integration is not configured\")\r\n        return {\"status\": \"not_configured\", \"provider\": \"jira\"}\r\n    if not force and not settings.jira_auto_sync and not ticket.external_id:\r\n        return {\"status\": \"disabled\", \"provider\": \"jira\"}\r\n    try:\r\n        if not ticket.external_id:\r\n            issue = jira.create_issue(ticket)\r\n            ticket.external_provider = jira.provider\r\n            ticket.external_id = issue[\"id\"]\r\n            ticket.external_url = issue[\"url\"]\r\n            db.add(TicketEvent(ticket_id=ticket.id, event_type=\"integration\", actor=\"Relay AI\", message=f\"Created Jira issue {issue['id']}\", details={\"provider\": \"jira\", \"external_id\": issue[\"id\"]}))\r\n        jira.sync_status(ticket.external_id, ticket.status)\r\n        if comment:\r\n            jira.add_comment(ticket.external_id, comment)\r\n        ticket.last_synced_at = datetime.now(timezone.utc)\r\n        ticket.sync_error = None\r\n        db.commit()\r\n        return {\"status\": \"synced\", \"provider\": \"jira\", \"external_id\": ticket.external_id, \"external_url\": ticket.external_url}\r\n    except JiraError as exc:\r\n        ticket.sync_error = str(exc)\r\n        db.commit()\r\n        if force:\r\n            raise\r\n        return {\"status\": \"error\", \"provider\": \"jira\", \"error\": str(exc)}\r\n"
+        }
+    ]
+}

@@ -19,8 +19,9 @@ from .auth import create_access_token, get_current_user, hash_password, require_
 from .core import settings
 from .integrations.jira import JiraError, jira
 from .integrations.service import sync_ticket_to_jira
+from .job_queue import dispatch_jira_sync, enqueue_sla_scan, queue, worker
 from .lifecycle import RESOLUTION_CODES, validate_transition
-from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
+from .models import AgentFeedback, Conversation, ConversationMessage, Job, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
 from .rag import ROLE_RANK, index
 from .routing import route_ticket
 from .schemas import (
@@ -34,6 +35,7 @@ from .schemas import (
     EscalationRequest,
     EventCreate,
     FeedbackRequest,
+    JobOut,
     KnowledgeCreate,
     LoginRequest,
     TokenOut,
@@ -75,7 +77,13 @@ async def lifespan(_: FastAPI):
     finally:
         knowledge_db.close()
     seed_demo_data()
-    yield
+    if settings.run_worker:
+        worker.start()
+    try:
+        yield
+    finally:
+        if settings.run_worker:
+            worker.stop()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -232,8 +240,47 @@ def jira_webhook(payload: dict[str, Any], x_jira_webhook_token: str | None = Hea
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": settings.app_name}
+def health(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return {"status": "ok", "service": settings.app_name, "jobs": queue.stats(db)}
+
+
+@app.get("/api/jobs", response_model=list[JobOut])
+def list_jobs(status: str | None = None, current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    query = select(Job).order_by(Job.created_at.desc()).limit(100)
+    if status:
+        query = query.where(Job.status == status)
+    return db.scalars(query).all()
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobOut)
+def get_job(job_id: str, current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.post("/api/jobs/{job_id}/retry", response_model=JobOut)
+def retry_job(job_id: str, current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in {"failed", "succeeded"}:
+        raise HTTPException(status_code=409, detail="Only completed or failed jobs can be retried")
+    job.status = "queued"
+    job.attempts = 0
+    job.run_after = datetime.now(timezone.utc)
+    job.completed_at = None
+    job.last_error = None
+    job.result = None
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@app.post("/api/jobs/sla-scan", response_model=JobOut)
+def schedule_sla_scan(current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    return enqueue_sla_scan(db)
 
 
 @app.get("/api/stats")
@@ -383,7 +430,7 @@ def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = 
     db.add(event)
     db.commit()
     db.refresh(event)
-    sync_ticket_to_jira(db, ticket, comment=payload.message)
+    dispatch_jira_sync(db, ticket, comment=payload.message)
     return event
 
 
@@ -540,7 +587,7 @@ def create_ticket(payload: TicketCreate, current_user: User = Depends(get_curren
     if ticket.status == "Escalated":
         record_event(db, ticket.id, "escalated", ticket.escalation_reason or "High-priority ticket escalated")
     db.commit()
-    sync_ticket_to_jira(db, ticket)
+    dispatch_jira_sync(db, ticket)
     return ticket
 
 
@@ -558,7 +605,7 @@ def approve_ticket(ticket_id: int, current_user: User = Depends(require_roles("m
     db.commit()
     if jira.configured:
         try:
-            sync_ticket_to_jira(db, ticket, force=True)
+            dispatch_jira_sync(db, ticket)
         except JiraError as exc:
             ticket.sync_error = str(exc)
             db.commit()
@@ -597,7 +644,7 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
     db.refresh(ticket)
     record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor=current_user.full_name)
     db.commit()
-    sync_ticket_to_jira(db, ticket, comment=ticket.escalation_reason)
+    dispatch_jira_sync(db, ticket, comment=ticket.escalation_reason)
     return ticket
 
 
@@ -642,7 +689,7 @@ def update_ticket_status(
             detail += f" ({ticket.resolution_code})"
         record_event(db, ticket.id, "status_changed", detail, actor=current_user.full_name)
         db.commit()
-        sync_ticket_to_jira(db, ticket, comment=detail)
+        dispatch_jira_sync(db, ticket, comment=detail)
     return ticket
 
 

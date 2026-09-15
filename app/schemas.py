@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class LoginRequest(BaseModel):
@@ -67,7 +67,22 @@ class FeedbackRequest(BaseModel):
 
 class EventCreate(BaseModel):
     message: str = Field(min_length=2, max_length=2000)
-    actor: str = "Alex Morgan"
+    visibility: str = Field(default="internal", pattern="^(internal|public)$")
+
+
+class TicketStatusUpdate(BaseModel):
+    status: str
+    resolution_code: str | None = Field(default=None, max_length=64)
+
+
+class LinkRequest(BaseModel):
+    relation: str = Field(pattern="^(parent|duplicate|related)$")
+    target_ticket_id: int
+
+
+class WatcherRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=180)
+    action: str = Field(default="add", pattern="^(add|remove)$")
 
 
 class KnowledgeCreate(BaseModel):
@@ -135,9 +150,47 @@ class TicketOut(BaseModel):
     last_synced_at: datetime | None
     sync_error: str | None
     requires_approval: bool
-    safety_flags: list[str]
+    safety_flags: list[str] | None
     approved_at: datetime | None
     approved_by: str | None
+    resolution_code: str | None
+    resolved_at: datetime | None
+    closed_at: datetime | None
+    reopened_at: datetime | None
+    parent_ticket_id: int | None
+    duplicate_of_id: int | None
+    related_ticket_ids: list[int] | None
+    watchers: list[str] | None
+    created_at: datetime
+
+    @computed_field
+    @property
+    def sla_state(self) -> str:
+        if self.status in {"Resolved", "Closed"}:
+            return "complete"
+        if not self.sla_due_at:
+            return "not_set"
+        due = self.sla_due_at
+        if due.tzinfo is None:
+            from datetime import timezone
+            due = due.replace(tzinfo=timezone.utc)
+        seconds_left = (due - datetime.now(timezone.utc)).total_seconds()
+        if seconds_left <= 0:
+            return "breached"
+        if seconds_left <= 3600:
+            return "at_risk"
+        return "on_track"
+
+    model_config = {"from_attributes": True}
+
+
+class TicketAttachmentOut(BaseModel):
+    id: int
+    ticket_id: int
+    filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_by: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -190,6 +243,7 @@ class TicketEventOut(BaseModel):
     actor: str
     message: str
     details: dict[str, Any] | None
+    visibility: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

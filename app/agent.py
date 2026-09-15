@@ -5,7 +5,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from .llm import llm
-from .models import Ticket
+from .models import Ticket, TicketEvent
 from .rag import index
 from .routing import route_ticket
 
@@ -38,7 +38,12 @@ class HelpdeskAgent:
             db.add(ticket)
             db.commit()
             db.refresh(ticket)
+            db.add(TicketEvent(ticket_id=ticket.id, event_type="created", actor="Relay AI", message=f"Ticket created and routed to {ticket.assignee}"))
+            if ticket.status == "Escalated":
+                db.add(TicketEvent(ticket_id=ticket.id, event_type="escalated", actor="Relay AI", message=ticket.escalation_reason or "High-priority ticket escalated"))
+            db.commit()
             ticket_payload = {
+                "id": ticket.id,
                 "ticket_number": ticket.ticket_number,
                 "status": ticket.status,
                 "priority": ticket.priority,

@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 6,
+            "activePatchIndex": 7,
             "patches": [
                 {
                     "date": 1789424902815,
@@ -32,6 +32,10 @@
                 {
                     "date": 1789496532288,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,8 +7,9 @@\n \n from .job_queue import dispatch_jira_sync\n from .llm import llm\n from .models import Ticket, TicketEvent\n+from .notifications import notify_ticket\n from .rag import index\n from .routing import route_ticket\n from .safety import assess_input, validate_triage\n \n@@ -60,8 +61,9 @@\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n             if requires_approval:\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"safety\", actor=\"Relay AI\", message=\"Automation paused pending human approval\", details={\"flags\": safety.flags}))\n             db.commit()\n+            notify_ticket(db, ticket, \"ticket_created\", f\"Ticket created: {ticket.ticket_number}\", f\"Your request was received and routed to {ticket.assignee}.\", \"created\")\n             integration = dispatch_jira_sync(db, ticket)\n             ticket_payload = {\n                 \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n"
+                },
+                {
+                    "date": 1789498778627,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,11 +7,10 @@\n \n from .job_queue import dispatch_jira_sync\n from .llm import llm\n from .models import Ticket, TicketEvent\n-from .notifications import notify_ticket\n from .rag import index\n-from .routing import route_ticket\n+from .routing import route_ticket, routing_rules\n from .safety import assess_input, validate_triage\n \n \n class HelpdeskAgent:\n@@ -32,9 +31,9 @@\n         ticket_payload = None\n \n         if create_ticket:\n             ticket_number = f\"HD-{uuid.uuid4().hex[:6].upper()}\"\n-            route = route_ticket(analysis[\"category\"], analysis[\"priority\"])\n+            route = route_ticket(analysis[\"category\"], analysis[\"priority\"], rules=routing_rules(db))\n             requires_approval = analysis[\"requires_approval\"]\n             ticket_status = \"Needs review\" if requires_approval else (\"Escalated\" if route[\"escalated\"] else \"Open\")\n             ticket = Ticket(\n                 ticket_number=ticket_number,\n@@ -61,9 +60,8 @@\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n             if requires_approval:\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"safety\", actor=\"Relay AI\", message=\"Automation paused pending human approval\", details={\"flags\": safety.flags}))\n             db.commit()\n-            notify_ticket(db, ticket, \"ticket_created\", f\"Ticket created: {ticket.ticket_number}\", f\"Your request was received and routed to {ticket.assignee}.\", \"created\")\n             integration = dispatch_jira_sync(db, ticket)\n             ticket_payload = {\n                 \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n"
                 }
             ],
             "date": 1789424902815,

@@ -16,6 +16,10 @@ services:
       DATABASE_URL: postgresql+psycopg://relay:relay@db:5432/relay
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}
+      ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}
     ports:
       - "8000:8000"
     depends_on:

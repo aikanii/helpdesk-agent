@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 3,
+            "activePatchIndex": 4,
             "patches": [
                 {
                     "date": 1789483778521,
@@ -20,6 +20,10 @@
                 {
                     "date": 1789490696771,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -13,8 +13,9 @@\n     app_name: str = \"Relay Helpdesk\"\n     database_url: str = os.getenv(\"DATABASE_URL\", \"sqlite:///./helpdesk.db\")\n     openai_api_key: str | None = os.getenv(\"OPENAI_API_KEY\")\n     openai_model: str = os.getenv(\"OPENAI_MODEL\", \"gpt-4o-mini\")\n+    embedding_model: str = os.getenv(\"EMBEDDING_MODEL\", \"text-embedding-3-small\")\n     jwt_secret: str = os.getenv(\"JWT_SECRET\", \"local-only-change-this-secret\")\n     jwt_algorithm: str = os.getenv(\"JWT_ALGORITHM\", \"HS256\")\n     access_token_minutes: int = int(os.getenv(\"ACCESS_TOKEN_MINUTES\", \"480\"))\n     admin_email: str = os.getenv(\"ADMIN_EMAIL\", \"admin@acme.co\")\n"
+                },
+                {
+                    "date": 1789495890820,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -27,8 +27,9 @@\n     jira_project_key: str = os.getenv(\"JIRA_PROJECT_KEY\", \"\")\n     jira_issue_type: str = os.getenv(\"JIRA_ISSUE_TYPE\", \"Task\")\n     jira_webhook_secret: str = os.getenv(\"JIRA_WEBHOOK_SECRET\", \"\")\n     jira_auto_sync: bool = os.getenv(\"JIRA_AUTO_SYNC\", \"false\").lower() == \"true\"\n+    run_worker: bool = os.getenv(\"RUN_WORKER\", \"true\").lower() == \"true\"\n     cors_origins: str = os.getenv(\"CORS_ORIGINS\", \"*\")\n     base_dir: Path = Path(__file__).resolve().parent\n \n \n"
                 }
             ],
             "date": 1789483778521,

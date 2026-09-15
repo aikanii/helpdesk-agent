@@ -28,6 +28,7 @@ class Settings(BaseModel):
     jira_issue_type: str = os.getenv("JIRA_ISSUE_TYPE", "Task")
     jira_webhook_secret: str = os.getenv("JIRA_WEBHOOK_SECRET", "")
     jira_auto_sync: bool = os.getenv("JIRA_AUTO_SYNC", "false").lower() == "true"
+    run_worker: bool = os.getenv("RUN_WORKER", "true").lower() == "true"
     cors_origins: str = os.getenv("CORS_ORIGINS", "*")
     base_dir: Path = Path(__file__).resolve().parent
 

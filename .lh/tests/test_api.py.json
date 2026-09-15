@@ -1,0 +1,18 @@
+{
+    "sourceFile": "tests/test_api.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789482976208,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789482976208,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nimport os\r\nfrom pathlib import Path\r\n\r\nimport pytest\r\n\r\nTEST_DB = Path(\"test_helpdesk.db\")\r\nif TEST_DB.exists():\r\n    TEST_DB.unlink()\r\nos.environ[\"DATABASE_URL\"] = \"sqlite:///./test_helpdesk.db\"\r\n\r\nfrom fastapi.testclient import TestClient  # noqa: E402\r\n\r\nfrom app.main import app  # noqa: E402\r\n\r\n\r\n@pytest.fixture(scope=\"module\")\r\ndef client():\r\n    with TestClient(app) as test_client:\r\n        yield test_client\r\n    TEST_DB.unlink(missing_ok=True)\r\n\r\n\r\ndef test_health_and_seeded_dashboard(client):\r\n    assert client.get(\"/api/health\").status_code == 200\r\n    stats = client.get(\"/api/stats\").json()\r\n    assert stats[\"open\"] >= 1\r\n    assert stats[\"escalated\"] >= 1\r\n\r\n\r\ndef test_diagnose_without_creating_ticket(client):\r\n    response = client.post(\r\n        \"/api/diagnose\",\r\n        json={\"message\": \"My password is locked and I cannot sign in\", \"create_ticket\": False},\r\n    )\r\n    assert response.status_code == 200\r\n    body = response.json()\r\n    assert body[\"intent\"] == \"Account access\"\r\n    assert body[\"ticket\"] is None\r\n    assert body[\"evidence\"]\r\n\r\n\r\ndef test_conversation_persists_two_messages(client):\r\n    conversation = client.post(\"/api/conversations\", json={}).json()\r\n    response = client.post(\r\n        f\"/api/conversations/{conversation['id']}/messages\",\r\n        json={\"message\": \"Slack is slow for my team\", \"create_ticket\": False},\r\n    )\r\n    assert response.status_code == 200\r\n    detail = client.get(f\"/api/conversations/{conversation['id']}\").json()\r\n    assert len(detail[\"messages\"]) == 2\r\n    assert detail[\"messages\"][0][\"role\"] == \"user\"\r\n    assert detail[\"messages\"][1][\"role\"] == \"assistant\"\r\n\r\n\r\ndef test_knowledge_ingestion_and_feedback(client):\r\n    document = client.post(\r\n        \"/api/docs\",\r\n        json={\r\n            \"title\": \"Test runbook\",\r\n            \"content\": \"Use this test runbook to verify knowledge ingestion works correctly.\",\r\n            \"category\": \"Testing\",\r\n        },\r\n    )\r\n    assert document.status_code == 200\r\n    document_id = document.json()[\"id\"]\r\n    assert client.delete(f\"/api/docs/{document_id}\").status_code == 200\r\n\r\n    feedback = client.post(\"/api/feedback\", json={\"run_id\": \"run_test\", \"rating\": \"helpful\"})\r\n    assert feedback.status_code == 200\r\n\r\n\r\ndef test_ticket_timeline_and_manual_note(client):\r\n    ticket = client.get(\"/api/tickets\").json()[0]\r\n    events = client.get(f\"/api/tickets/{ticket['id']}/events\")\r\n    assert events.status_code == 200\r\n    note = client.post(\r\n        f\"/api/tickets/{ticket['id']}/events\",\r\n        json={\"message\": \"Reviewed by automated API test\", \"actor\": \"Test Agent\"},\r\n    )\r\n    assert note.status_code == 200\r\n    assert note.json()[\"event_type\"] == \"note\"\r\n"
+        }
+    ]
+}

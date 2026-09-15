@@ -16,6 +16,7 @@ services:
       DATABASE_URL: postgresql+psycopg://relay:relay@db:5432/relay
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}
@@ -27,8 +28,32 @@ services:
       JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}
       JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}
+      RUN_WORKER: "false"
     ports:
       - "8000:8000"
+    depends_on:
+      - db
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://relay:relay@db:5432/relay
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}
+      ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
+      JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}
+      JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}
+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}
+      RUN_WORKER: "false"
     depends_on:
       - db
 

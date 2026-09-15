@@ -4,7 +4,8 @@ const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (char) => (
 const state = { tickets: [], docs: [], stats: {}, token: localStorage.getItem('relay_token'), user: null };
 
 async function getJson(url, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const isFormData = options.body instanceof FormData;
+  const headers = { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const response = await fetch(url, { ...options, headers });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Something went wrong');
@@ -18,6 +19,7 @@ function updateUserProfile(user) {
   $('#profileRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
   $('#profileAvatar').textContent = initials;
   $('#topAvatar').textContent = initials;
+  $('#uploadKnowledgeBtn')?.classList.toggle('hidden-app', !['admin', 'manager'].includes(user.role));
 }
 
 function showAuthenticatedApp(user) {
@@ -160,6 +162,20 @@ $('#logoutBtn').addEventListener('click', () => {
   state.token = null;
   state.user = null;
   showLogin();
+});
+
+$('#uploadKnowledgeBtn').addEventListener('click', () => $('#knowledgeFileInput').click());
+$('#knowledgeFileInput').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    await getJson('/api/docs/upload', { method: 'POST', body: form });
+    showToast('Runbook uploaded and indexed');
+    await loadDashboard();
+  } catch (error) { showToast(error.message); }
+  event.target.value = '';
 });
 
 $('#diagnoseBtn').addEventListener('click', runDiagnosis);

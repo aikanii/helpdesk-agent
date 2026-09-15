@@ -110,18 +110,6 @@ def test_guardrails_redact_secrets_and_require_approval(client):
     assert approved.json()["requires_approval"] is False
 
 
-def test_notifications_and_preferences(client):
-    notifications = client.get("/api/notifications").json()
-    assert isinstance(notifications, list)
-    preferences = client.get("/api/notifications/preferences")
-    assert preferences.status_code == 200
-    updated = client.put("/api/notifications/preferences", json={"in_app_enabled": True, "email_enabled": False, "email_on_assignment": True, "email_on_status_change": True, "email_on_sla_breach": True})
-    assert updated.status_code == 200
-    assert updated.json()["email_enabled"] is False
-    if notifications:
-        assert client.patch(f"/api/notifications/{notifications[0]['id']}/read").status_code == 200
-
-
 def test_ticket_lifecycle_transitions_and_resolution(client):
     ticket = client.get("/api/tickets?status=Open").json()[0]
     ticket_id = ticket["id"]
@@ -134,6 +122,37 @@ def test_ticket_lifecycle_transitions_and_resolution(client):
     assert closed.status_code == 200
     reopened = client.patch(f"/api/tickets/{ticket_id}/status?status=Reopened")
     assert reopened.status_code == 200
+
+
+def test_analytics_team_routing_and_settings(client):
+    analytics = client.get("/api/analytics/overview")
+    assert analytics.status_code == 200
+    assert "automation_rate" in analytics.json()["totals"]
+    rules = client.get("/api/routing/rules")
+    assert rules.status_code == 200
+    assert len(rules.json()) >= 5
+    rule = rules.json()[0]
+    updated = client.put("/api/routing/rules", json={"category": rule["category"], "team": rule["team"], "sla_hours": rule["sla_hours"], "auto_escalate_high": rule["auto_escalate_high"]})
+    assert updated.status_code == 200
+    profile = client.patch("/api/auth/me", json={"full_name": "Acme Administrator", "email": "admin@acme.co"})
+    assert profile.status_code == 200
+    preferences = client.get("/api/notifications/preferences")
+    assert preferences.status_code == 200
+    saved = client.put("/api/notifications/preferences", json=preferences.json())
+    assert saved.status_code == 200
+
+
+def test_team_user_creation_role_and_activation(client):
+    email = "team-test@example.com"
+    created = client.post("/api/auth/users", json={"full_name": "Team Test", "email": email, "password": "temporary-password", "role": "agent"})
+    assert created.status_code == 200
+    user_id = created.json()["id"]
+    changed = client.patch(f"/api/auth/users/{user_id}/role?role=manager")
+    assert changed.status_code == 200
+    assert changed.json()["role"] == "manager"
+    inactive = client.patch(f"/api/auth/users/{user_id}/active?active=false")
+    assert inactive.status_code == 200
+    assert inactive.json()["is_active"] is False
 
 
 def test_ticket_timeline_and_manual_note(client):

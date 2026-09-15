@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from .integrations.service import sync_ticket_to_jira
+from .job_queue import dispatch_jira_sync
 from .llm import llm
 from .models import Ticket, TicketEvent
 from .rag import index
@@ -61,7 +61,7 @@ class HelpdeskAgent:
             if requires_approval:
                 db.add(TicketEvent(ticket_id=ticket.id, event_type="safety", actor="Relay AI", message="Automation paused pending human approval", details={"flags": safety.flags}))
             db.commit()
-            integration = sync_ticket_to_jira(db, ticket)
+            integration = dispatch_jira_sync(db, ticket)
             ticket_payload = {
                 "id": ticket.id,
                 "ticket_number": ticket.ticket_number,

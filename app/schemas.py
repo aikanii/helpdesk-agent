@@ -18,6 +18,25 @@ class TokenOut(BaseModel):
     user: dict[str, Any]
 
 
+class JobOut(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    payload: dict[str, Any]
+    result: dict[str, Any] | None
+    idempotency_key: str | None
+    attempts: int
+    max_attempts: int
+    run_after: datetime
+    locked_at: datetime | None
+    locked_by: str | None
+    last_error: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class UserOut(BaseModel):
     id: int
     email: str

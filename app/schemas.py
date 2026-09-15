@@ -37,39 +37,6 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class NotificationOut(BaseModel):
-    id: str
-    user_id: int
-    ticket_id: int | None
-    notification_type: str
-    title: str
-    body: str
-    channel: str
-    status: str
-    notification_metadata: dict[str, Any] | None = None
-    error: str | None
-    created_at: datetime
-    sent_at: datetime | None
-    read_at: datetime | None
-
-    model_config = {"from_attributes": True}
-
-
-class NotificationPreferenceUpdate(BaseModel):
-    in_app_enabled: bool = True
-    email_enabled: bool = True
-    email_on_assignment: bool = True
-    email_on_status_change: bool = True
-    email_on_sla_breach: bool = True
-
-
-class NotificationPreferenceOut(NotificationPreferenceUpdate):
-    user_id: int
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 class UserOut(BaseModel):
     id: int
     email: str
@@ -86,6 +53,66 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     password: str = Field(min_length=8, max_length=200)
     role: str = Field(default="requester", pattern="^(requester|agent|manager|admin)$")
+
+
+class ProfileUpdate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=180)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=8, max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class NotificationOut(BaseModel):
+    id: str
+    notification_type: str
+    title: str
+    message: str
+    link: str | None
+    read_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferenceOut(BaseModel):
+    user_id: int
+    in_app_enabled: bool
+    email_enabled: bool
+    email_on_assignment: bool
+    email_on_status_change: bool
+    email_on_sla_breach: bool
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    in_app_enabled: bool = True
+    email_enabled: bool = True
+    email_on_assignment: bool = True
+    email_on_status_change: bool = True
+    email_on_sla_breach: bool = True
+
+
+class RoutingRuleOut(BaseModel):
+    id: int
+    category: str
+    team: str
+    sla_hours: int
+    auto_escalate_high: bool
+    updated_by: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RoutingRuleUpdate(BaseModel):
+    category: str = Field(min_length=2, max_length=64)
+    team: str = Field(min_length=2, max_length=120)
+    sla_hours: int = Field(ge=1, le=168)
+    auto_escalate_high: bool = True
 
 
 class DiagnoseRequest(BaseModel):

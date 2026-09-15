@@ -205,14 +205,15 @@ async function openTicket(ticketId) {
       <div class="detail-summary"><div><span class="status-pill ${statusClass(ticket.status)}">${escapeHtml(ticket.status)}</span><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)} priority</span></div><span class="detail-team">${escapeHtml(ticket.assignee || 'Service Desk')}</span></div>${ticket.requires_approval ? '<span class="status-pill needs-review">Approval required</span>' : ''}</div>
       <div class="integration-card"><div><span class="integration-icon">J</span><div><strong>${ticket.external_id ? `Linked Jira issue ${escapeHtml(ticket.external_id)}` : 'Jira Service Management'}</strong><small>${ticket.external_id ? 'Last sync ' + (ticket.last_synced_at ? relativeTime(ticket.last_synced_at) : 'pending') : 'Not linked yet'}</small></div></div><div class="integration-actions">${ticket.external_url ? `<a href="${escapeHtml(ticket.external_url)}" target="_blank" rel="noreferrer" class="jira-link">Open ↗</a>` : ''}<button class="modal-action" data-sync-jira="true">${ticket.external_id ? 'Sync' : 'Create Jira issue'}</button></div></div>
       <p class="detail-description">${escapeHtml(ticket.description)}</p>
-      <div class="detail-metrics"><div><span>Category</span><strong>${escapeHtml(ticket.category)}</strong></div><div><span>SLA due</span><strong>${ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set'}</strong></div><div><span>Source</span><strong>${escapeHtml(ticket.source)}</strong></div></div>
+      <div class="detail-metrics"><div><span>Category</span><strong>${escapeHtml(ticket.category)}</strong></div><div><span>SLA due</span><strong>${ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set'}</strong></div><div><span>Source</span><strong>${escapeHtml(ticket.source)}</strong></div>${ticket.resolution_code ? `<div><span>Resolution</span><strong>${escapeHtml(ticket.resolution_code)}</strong></div>` : ''}</div>
       <div class="modal-section"><h4>ACTIVITY TIMELINE</h4><div class="timeline">${timeline}</div></div>
-      <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions">${ticket.requires_approval ? '<button class="modal-action approve" data-approve-ticket="true">Approve safety review</button>' : ''}<button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>${ticket.status !== 'Escalated' && !ticket.requires_approval ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button></div>`;
+      <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions">${ticket.requires_approval ? '<button class="modal-action approve" data-approve-ticket="true">Approve safety review</button>' : ''}${!['Resolved', 'Closed'].includes(ticket.status) ? '<button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Pending">Pending</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>' : ''}${ticket.status === 'Resolved' ? '<button class="modal-action" data-ticket-status="Closed">Close ticket</button><button class="modal-action" data-ticket-status="Reopened">Reopen</button>' : ''}${ticket.status === 'Closed' ? '<button class="modal-action" data-ticket-status="Reopened">Reopen</button>' : ''}${ticket.status !== 'Escalated' && !ticket.requires_approval && !['Resolved', 'Closed'].includes(ticket.status) ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button><div class="attachment-row"><input id="ticketAttachment" type="file" accept=".pdf,.txt,.csv,.json,.png,.jpg,.jpeg,.webp" /><button class="modal-action" data-upload-attachment="true">Attach file</button></div></div>`;
     document.querySelectorAll('[data-ticket-status]').forEach(button => button.addEventListener('click', () => updateTicketStatus(ticket.id, button.dataset.ticketStatus)));
     $('[data-escalate-ticket]')?.addEventListener('click', () => escalateTicket(ticket.id));
     $('[data-approve-ticket]')?.addEventListener('click', () => approveTicket(ticket.id));
     $('[data-sync-jira]')?.addEventListener('click', () => syncJiraTicket(ticket.id));
     $('[data-add-note]')?.addEventListener('click', () => addTicketNote(ticket.id));
+    $('[data-upload-attachment]')?.addEventListener('click', () => uploadTicketAttachment(ticket.id));
   } catch (error) { $('#ticketDetail').innerHTML = `<div class="loading">${escapeHtml(error.message)}</div>`; }
 }
 
@@ -242,6 +243,14 @@ async function syncJiraTicket(ticketId) {
     await openTicket(ticketId);
     await loadDashboard();
   } catch (error) { showToast(error.message); }
+}
+
+async function uploadTicketAttachment(ticketId) {
+  const file = $('#ticketAttachment')?.files?.[0];
+  if (!file) { showToast('Choose a file first.'); return; }
+  const form = new FormData();
+  form.append('file', file);
+  try { await getJson(`/api/tickets/${ticketId}/attachments`, { method: 'POST', body: form }); showToast('Attachment uploaded'); await openTicket(ticketId); } catch (error) { showToast(error.message); }
 }
 
 async function addTicketNote(ticketId) {

@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from .core import settings
 from .integrations.service import sync_ticket_to_jira
-from .models import Job, SessionLocal, Ticket, TicketEvent
+from .models import Job, Notification, SessionLocal, Ticket, TicketEvent
+from .notifications import deliver_notification
 
 logger = logging.getLogger("relay.jobs")
 
@@ -132,6 +133,11 @@ class JobQueue:
             return sync_ticket_to_jira(db, ticket, force=True, comment=job.payload.get("comment"))
         if job.job_type == "sla_scan":
             return self._run_sla_scan(db)
+        if job.job_type == "send_notification":
+            notification = db.get(Notification, job.payload.get("notification_id"))
+            if not notification:
+                return {"status": "skipped", "reason": "Notification no longer exists"}
+            return deliver_notification(db, notification)
         raise RuntimeError(f"Unknown job type: {job.job_type}")
 
     @staticmethod
@@ -139,11 +145,13 @@ class JobQueue:
         now = datetime.now(timezone.utc)
         tickets = db.scalars(select(Ticket).where(Ticket.status.notin_(["Resolved", "Closed"]), Ticket.sla_due_at < now)).all()
         created = 0
+        from .notifications import notify_ticket
         for ticket in tickets:
             message = "SLA breached; review and escalate this ticket"
             already_logged = db.scalar(select(func.count(TicketEvent.id)).where(TicketEvent.ticket_id == ticket.id, TicketEvent.event_type == "sla_breach"))
             if not already_logged:
                 db.add(TicketEvent(ticket_id=ticket.id, event_type="sla_breach", actor="Relay worker", message=message, visibility="internal"))
+                notify_ticket(db, ticket, "sla_breach", f"SLA breached: {ticket.ticket_number}", message, "sla_breach")
                 created += 1
         if created:
             db.commit()

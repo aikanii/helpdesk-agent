@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 1,
+            "activePatchIndex": 2,
             "patches": [
                 {
                     "date": 1789484330978,
@@ -12,6 +12,10 @@
                 {
                     "date": 1789486708315,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -19,8 +19,15 @@\n       JWT_SECRET: ${JWT_SECRET:-replace-me-before-production}\n       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@acme.co}\n       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-relay-demo-2026}\n       ADMIN_NAME: ${ADMIN_NAME:-Acme Administrator}\n+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}\n+      JIRA_EMAIL: ${JIRA_EMAIL:-}\n+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}\n+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}\n+      JIRA_ISSUE_TYPE: ${JIRA_ISSUE_TYPE:-Task}\n+      JIRA_AUTO_SYNC: ${JIRA_AUTO_SYNC:-false}\n+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-}\n     ports:\n       - \"8000:8000\"\n     depends_on:\n       - db\n"
+                },
+                {
+                    "date": 1789490732240,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,7 +1,7 @@\n services:\n   db:\n-    image: postgres:16-alpine\n+    image: pgvector/pgvector:pg16\n     environment:\n       POSTGRES_USER: relay\n       POSTGRES_PASSWORD: relay\n       POSTGRES_DB: relay\n"
                 }
             ],
             "date": 1789484330978,

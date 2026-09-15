@@ -6,24 +6,6 @@
     <title>Relay · AI IT Helpdesk</title>
     <meta name="description" content="AI-powered IT helpdesk operations dashboard" />
     <link rel="stylesheet" href="/static/styles.css" />
-    <style>
-      .hidden-app { display: none !important; }
-      .auth-gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 10%, #eeeaff 0, #f7f8fb 38%, #f7f8fb 100%); }
-      .auth-card { width: min(100%, 430px); padding: 42px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
-      .auth-brand { padding: 0 0 30px; }
-      .auth-kicker { color: var(--violet); font-size: 10px; font-weight: 760; letter-spacing: 1.1px; }
-      .auth-card h1 { margin: 10px 0 8px; font-size: 32px; }
-      .auth-copy { color: var(--muted); line-height: 1.6; margin: 0 0 28px; }
-      .login-form { display: grid; gap: 16px; }
-      .login-form label { display: grid; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 700; }
-      .login-form input { width: 100%; padding: 12px 13px; border: 1px solid var(--line); border-radius: 8px; font: inherit; color: var(--ink); background: #fbfcfe; }
-      .login-form input:focus { outline: 2px solid #d9d2ff; border-color: var(--violet); }
-      .login-button { width: 100%; justify-content: center; }
-      .login-error { min-height: 18px; margin: 0; color: #c34a4a; font-size: 12px; }
-      .demo-credentials { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
-      .demo-credentials span { font-size: 9px; font-weight: 760; letter-spacing: 1px; color: #a5afbe; }
-      .demo-credentials strong { color: var(--ink); }
-    </style>
   </head>
   <body>
     <section id="authGate" class="auth-gate">
@@ -38,7 +20,7 @@
           <button class="button primary login-button" type="submit">Sign in <span class="arrow">→</span></button>
           <p id="loginError" class="login-error"></p>
         </form>
-        <div class="demo-credentials"><span>DEMO ACCESS</span><strong><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="0e6f6a6367604e6f6d636b206d61">[email&#160;protected]</a></strong><small>Password: relay-demo-2026</small></div>
+        <div class="demo-credentials"><span>DEMO ACCESS</span><strong><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f293969f9b9cb293919f97dc919d">[email&#160;protected]</a></strong><small>Password: relay-demo-2026</small></div>
       </div>
     </section>
     <div class="app-shell hidden-app" id="appShell">
@@ -80,7 +62,7 @@
 
         <section class="lower-grid" id="queue">
           <div class="queue-card card"><div class="section-heading"><div><div class="title-row"><h2>My queue</h2><span class="count-badge" id="queueCount">—</span></div><p>Tickets that need your attention</p></div><div class="queue-actions"><button class="filter-button" id="statusFilter">All statuses <span>⌄</span></button><button class="more-button">•••</button></div></div><div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Requester</th><th>Priority</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody id="ticketRows"><tr><td colspan="6" class="loading">Loading queue…</td></tr></tbody></table></div><div class="card-footer"><span id="queueSummary">Showing recent tickets</span><button class="text-button">View all tickets <span>→</span></button></div></div>
-          <div class="knowledge-card card" id="knowledge"><div class="section-heading"><div><h2>Knowledge base</h2><p>Top runbooks for your team</p></div><button class="more-button">•••</button></div><div id="docList" class="doc-list"><div class="loading">Loading runbooks…</div></div><div class="card-footer"><button class="text-button">Browse all documentation <span>→</span></button></div></div>
+          <div class="knowledge-card card" id="knowledge"><div class="section-heading"><div><h2>Knowledge base</h2><p>Top runbooks for your team</p></div><button class="more-button">•••</button></div><div id="docList" class="doc-list"><div class="loading">Loading runbooks…</div></div><div class="card-footer"><button class="text-button">Browse all documentation <span>→</span></button><div class="kb-admin-actions"><button class="text-button hidden-app" id="uploadKnowledgeBtn">Upload runbook <span>＋</span></button><input id="knowledgeFileInput" type="file" class="hidden-app" accept=".pdf,.docx,.txt,.md,.csv,.json,.html" /></div></div></div>
         </section>
         <footer class="page-footer"><span>Relay Helpdesk v0.1</span><span><span class="footer-dot"></span> API connected</span><span>⌘ K to search</span></footer>
       </main>
@@ -94,5 +76,5 @@
     </div>
     <div id="toast" class="toast"></div>
     <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="/static/app.js"></script>
-  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3b87b22cc0bcdd2',t:'MTc4OTQ4NDIxNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+  <script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a3b91e0c5d9dce59',t:'MTc4OTQ5MDg4OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

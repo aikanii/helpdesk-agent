@@ -13,6 +13,18 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(180), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(120))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(24), default="requester")
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
@@ -20,6 +32,7 @@ class Ticket(Base):
     ticket_number: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     title: Mapped[str] = mapped_column(String(220))
     description: Mapped[str] = mapped_column(Text)
+    requester_email: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
     category: Mapped[str] = mapped_column(String(64), default="General")
     priority: Mapped[str] = mapped_column(String(24), default="Medium")
     status: Mapped[str] = mapped_column(String(24), default="Open")
@@ -90,6 +103,7 @@ def init_db() -> None:
         if settings.database_url.startswith("sqlite"):
             existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tickets)").fetchall()}
             columns = {
+                "requester_email": "VARCHAR(180)",
                 "sla_due_at": "DATETIME",
                 "escalated_at": "DATETIME",
                 "escalation_reason": "TEXT",
@@ -98,6 +112,7 @@ def init_db() -> None:
                 if name not in existing:
                     connection.exec_driver_sql(f"ALTER TABLE tickets ADD COLUMN {name} {column_type}")
         else:
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_email VARCHAR(180)")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_reason TEXT")

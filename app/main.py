@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from .agent import agent
 from .auth import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from .core import settings
+from .integrations.jira import JiraError, jira
+from .integrations.service import sync_ticket_to_jira
 from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketEvent, User, init_db
 from .rag import index
 from .routing import route_ticket
@@ -170,6 +172,52 @@ def set_user_active(user_id: int, active: bool, current_admin: User = Depends(re
     db.commit()
     db.refresh(user)
     return user
+
+
+@app.get("/api/integrations/jira/status")
+def jira_status(current_admin: User = Depends(require_roles("admin"))):
+    return {
+        "provider": "jira",
+        "configured": jira.configured,
+        "auto_sync": settings.jira_auto_sync,
+        "base_url": settings.jira_base_url or None,
+        "project_key": settings.jira_project_key or None,
+    }
+
+
+@app.post("/api/integrations/jira/test")
+def test_jira_connection(current_admin: User = Depends(require_roles("admin"))):
+    try:
+        return {"status": "connected", "provider": "jira", "account": jira.test_connection()}
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/webhooks/jira")
+def jira_webhook(payload: dict[str, Any], x_jira_webhook_token: str | None = Header(default=None), db: Session = Depends(get_db)):
+    if not settings.jira_webhook_secret or x_jira_webhook_token != settings.jira_webhook_secret:
+        raise HTTPException(status_code=401, detail="Invalid Jira webhook token")
+    issue = payload.get("issue", {})
+    issue_key = issue.get("key")
+    status_name = str(issue.get("fields", {}).get("status", {}).get("name", "")).lower()
+    if not issue_key:
+        raise HTTPException(status_code=400, detail="Webhook payload is missing issue.key")
+    ticket = db.scalar(select(Ticket).where(Ticket.external_id == issue_key))
+    if not ticket:
+        return {"status": "ignored", "reason": "No linked Relay ticket", "external_id": issue_key}
+    previous_status = ticket.status
+    if status_name in {"done", "resolved", "closed", "complete", "completed"}:
+        ticket.status = "Resolved"
+    elif "progress" in status_name or status_name in {"in development", "in review"}:
+        ticket.status = "In progress"
+    else:
+        ticket.status = "Open"
+    ticket.last_synced_at = datetime.now(timezone.utc)
+    ticket.sync_error = None
+    if previous_status != ticket.status:
+        record_event(db, ticket.id, "integration", f"Jira updated status to {ticket.status}", actor="Jira webhook", details={"external_id": issue_key})
+    db.commit()
+    return {"status": "updated", "ticket_number": ticket.ticket_number, "relay_status": ticket.status}
 
 
 @app.get("/api/health")
@@ -356,6 +404,20 @@ def create_ticket(payload: TicketCreate, current_user: User = Depends(get_curren
     if ticket.status == "Escalated":
         record_event(db, ticket.id, "escalated", ticket.escalation_reason or "High-priority ticket escalated")
     db.commit()
+    sync_ticket_to_jira(db, ticket)
+    return ticket
+
+
+@app.post("/api/tickets/{ticket_id}/sync", response_model=TicketOut)
+def sync_ticket(ticket_id: int, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    try:
+        sync_ticket_to_jira(db, ticket, force=True)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    db.refresh(ticket)
     return ticket
 
 
@@ -375,6 +437,7 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
     db.refresh(ticket)
     record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor=current_user.full_name)
     db.commit()
+    sync_ticket_to_jira(db, ticket, comment=ticket.escalation_reason)
     return ticket
 
 
@@ -390,8 +453,10 @@ def update_ticket_status(ticket_id: int, status: str, current_user: User = Depen
     db.commit()
     db.refresh(ticket)
     if previous_status != status:
-        record_event(db, ticket.id, "status_changed", f"Status changed from {previous_status} to {status}", actor=current_user.full_name)
+        status_message = f"Status changed from {previous_status} to {status}"
+        record_event(db, ticket.id, "status_changed", status_message, actor=current_user.full_name)
         db.commit()
+        sync_ticket_to_jira(db, ticket, comment=status_message)
     return ticket
 
 

@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/auth.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789484536433,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789484536433,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nfrom datetime import datetime, timedelta, timezone\r\nfrom typing import Callable\r\n\r\nimport jwt\r\nfrom fastapi import Depends, HTTPException, status\r\nfrom fastapi.security import OAuth2PasswordBearer\r\nfrom pwdlib import PasswordHash\r\nfrom sqlalchemy.orm import Session\r\n\r\nfrom .core import settings\r\nfrom .models import User\r\nfrom .models import get_db as model_get_db\r\n\r\npassword_hash = PasswordHash.recommended()\r\noauth2_scheme = OAuth2PasswordBearer(tokenUrl=\"/api/auth/login\")\r\n\r\n\r\ndef hash_password(password: str) -> str:\r\n    return password_hash.hash(password)\r\n\r\n\r\ndef verify_password(password: str, hashed_password: str) -> bool:\r\n    return password_hash.verify(password, hashed_password)\r\n\r\n\r\ndef create_access_token(user: User) -> str:\r\n    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_minutes)\r\n    payload = {\r\n        \"sub\": str(user.id),\r\n        \"email\": user.email,\r\n        \"role\": user.role,\r\n        \"exp\": expires_at,\r\n        \"iat\": datetime.now(timezone.utc),\r\n    }\r\n    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)\r\n\r\n\r\ndef get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(model_get_db)) -> User:\r\n    credentials_error = HTTPException(\r\n        status_code=status.HTTP_401_UNAUTHORIZED,\r\n        detail=\"Authentication required\",\r\n        headers={\"WWW-Authenticate\": \"Bearer\"},\r\n    )\r\n    try:\r\n        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])\r\n        user_id = payload.get(\"sub\")\r\n        if not user_id:\r\n            raise credentials_error\r\n        try:\r\n            user_id = int(user_id)\r\n        except (TypeError, ValueError) as exc:\r\n            raise credentials_error from exc\r\n    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as exc:\r\n        raise credentials_error from exc\r\n    user = db.get(User, user_id)\r\n    if not user or not user.is_active:\r\n        raise credentials_error\r\n    return user\r\n\r\n\r\ndef require_roles(*roles: str) -> Callable:\r\n    def dependency(current_user: User = Depends(get_current_user)) -> User:\r\n        if current_user.role not in roles:\r\n            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=\"You do not have permission for this action\")\r\n        return current_user\r\n\r\n    return dependency\r\n"
+        }
+    ]
+}

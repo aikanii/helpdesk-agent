@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 import uuid
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +20,7 @@ from .core import settings
 from .integrations.jira import JiraError, jira
 from .integrations.service import sync_ticket_to_jira
 from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketEvent, User, init_db
-from .rag import index
+from .rag import ROLE_RANK, index
 from .routing import route_ticket
 from .schemas import (
     ChatRequest,
@@ -63,6 +64,11 @@ def seed_admin() -> None:
 async def lifespan(_: FastAPI):
     init_db()
     seed_admin()
+    knowledge_db = SessionLocal()
+    try:
+        index.ensure_seeded(knowledge_db)
+    finally:
+        knowledge_db.close()
     seed_demo_data()
     yield
 
@@ -86,10 +92,10 @@ def seed_demo_data() -> None:
         if db.scalar(select(func.count(Ticket.id))) == 0:
             now = datetime.now(timezone.utc)
             demo = [
-                Ticket(ticket_number="HD-4F8A21", title="VPN connection failed", description="Unable to connect to the company VPN from home.", category="Access & Identity", priority="High", status="Open", assignee="Network Operations", source="AI Agent", evidence=index.search("VPN connection"), created_at=now - timedelta(minutes=12)),
-                Ticket(ticket_number="HD-7C2D10", title="Password reset request", description="User is locked out after several login attempts.", category="Access & Identity", priority="Medium", status="In progress", assignee="Identity Operations", source="Portal", evidence=index.search("password locked"), created_at=now - timedelta(hours=2)),
-                Ticket(ticket_number="HD-9AA013", title="Slack messages delayed", description="Messages are delayed for a small team.", category="Service Health", priority="Low", status="Open", assignee="Service Desk", source="AI Agent", evidence=index.search("Slack delayed"), created_at=now - timedelta(hours=5)),
-                Ticket(ticket_number="HD-2B7E04", title="Laptop running slowly", description="Laptop performance degraded since the latest update.", category="Endpoint", priority="Medium", status="Resolved", assignee="Endpoint Support", source="Portal", evidence=index.search("laptop slow"), created_at=now - timedelta(days=1, hours=3)),
+                Ticket(ticket_number="HD-4F8A21", title="VPN connection failed", description="Unable to connect to the company VPN from home.", category="Access & Identity", priority="High", status="Open", assignee="Network Operations", source="AI Agent", evidence=index.search("VPN connection", db), created_at=now - timedelta(minutes=12)),
+                Ticket(ticket_number="HD-7C2D10", title="Password reset request", description="User is locked out after several login attempts.", category="Access & Identity", priority="Medium", status="In progress", assignee="Identity Operations", source="Portal", evidence=index.search("password locked", db), created_at=now - timedelta(hours=2)),
+                Ticket(ticket_number="HD-9AA013", title="Slack messages delayed", description="Messages are delayed for a small team.", category="Service Health", priority="Low", status="Open", assignee="Service Desk", source="AI Agent", evidence=index.search("Slack delayed", db), created_at=now - timedelta(hours=5)),
+                Ticket(ticket_number="HD-2B7E04", title="Laptop running slowly", description="Laptop performance degraded since the latest update.", category="Endpoint", priority="Medium", status="Resolved", assignee="Endpoint Support", source="Portal", evidence=index.search("laptop slow", db), created_at=now - timedelta(days=1, hours=3)),
             ]
             for ticket in demo:
                 route = route_ticket(ticket.category, ticket.priority)
@@ -242,7 +248,7 @@ def stats(current_user: User = Depends(get_current_user), db: Session = Depends(
 
 @app.post("/api/diagnose", response_model=DiagnoseResponse)
 def diagnose(payload: DiagnoseRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket)
+    return agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket, current_user.role)
 
 
 def conversation_payload(db: Session, conversation: Conversation) -> dict:
@@ -304,7 +310,7 @@ def send_conversation_message(conversation_id: str, payload: ChatRequest, curren
     user_message = ConversationMessage(conversation_id=conversation.id, role="user", content=payload.message)
     db.add(user_message)
     db.flush()
-    result = agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket)
+    result = agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket, current_user.role)
     assistant_text = f"{result['summary']} Recommended next step: {result['actions'][0]['detail']}"
     db.add(ConversationMessage(conversation_id=conversation.id, role="assistant", content=assistant_text, payload=result))
     conversation.user_name = current_user.full_name
@@ -461,25 +467,59 @@ def update_ticket_status(ticket_id: int, status: str, current_user: User = Depen
 
 
 @app.get("/api/docs", response_model=list[DocumentOut])
-def list_docs(q: str | None = Query(default=None, max_length=100), current_user: User = Depends(get_current_user)):
-    return index.search(q, limit=10) if q else index.all()
+def list_docs(q: str | None = Query(default=None, max_length=100), category: str | None = Query(default=None, max_length=64), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return index.search(q, db, limit=10, user_role=current_user.role, category=category) if q else index.all(db, user_role=current_user.role, category=category)
 
 
 @app.post("/api/docs", response_model=DocumentOut)
-def add_doc(payload: KnowledgeCreate, current_user: User = Depends(require_roles("admin", "manager"))):
-    return index.add(payload.title, payload.content, payload.category, payload.source)
+def add_doc(payload: KnowledgeCreate, current_user: User = Depends(require_roles("admin", "manager")), db: Session = Depends(get_db)):
+    return index.ingest(db, payload.title, payload.content, payload.category, payload.source, payload.source_url, payload.min_role, current_user.email)
+
+
+def extract_uploaded_text(filename: str, payload: bytes) -> str:
+    extension = Path(filename).suffix.lower()
+    if extension in {".txt", ".md", ".csv", ".json", ".html"}:
+        return payload.decode("utf-8", errors="replace")
+    if extension == ".pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(BytesIO(payload))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+    if extension == ".docx":
+        from docx import Document as DocxDocument
+        document = DocxDocument(BytesIO(payload))
+        return "\n\n".join(paragraph.text for paragraph in document.paragraphs)
+    raise HTTPException(status_code=415, detail="Supported files: PDF, DOCX, TXT, Markdown, CSV, JSON, and HTML")
+
+
+@app.post("/api/docs/upload", response_model=DocumentOut)
+async def upload_doc(
+    file: UploadFile = File(...),
+    category: str = "General",
+    min_role: str = "requester",
+    current_user: User = Depends(require_roles("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    payload = await file.read()
+    if len(payload) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Knowledge files must be 10 MB or smaller")
+    content = extract_uploaded_text(file.filename or "upload.txt", payload).strip()
+    if len(content) < 20:
+        raise HTTPException(status_code=422, detail="The uploaded file did not contain enough text to index")
+    return index.ingest(db, Path(file.filename or "upload.txt").stem, content, category, file.filename or "Uploaded document", None, min_role, current_user.email)
 
 
 @app.delete("/api/docs/{doc_id}")
-def delete_doc(doc_id: str, current_user: User = Depends(require_roles("admin", "manager"))):
-    if not index.delete(doc_id):
+def delete_doc(doc_id: str, current_user: User = Depends(require_roles("admin", "manager")), db: Session = Depends(get_db)):
+    if not index.delete(db, doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted", "document_id": doc_id}
 
 
-@app.get("/api/docs/{doc_id}")
-def get_doc(doc_id: str, current_user: User = Depends(get_current_user)):
-    match = next((doc for doc in index.all() if doc["id"] == doc_id), None)
+@app.get("/api/docs/{doc_id}", response_model=DocumentOut)
+def get_doc(doc_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    match = index.get(db, doc_id)
     if not match:
         raise HTTPException(status_code=404, detail="Document not found")
+    if ROLE_RANK.get(current_user.role, 0) < ROLE_RANK.get(match["min_role"], 0):
+        raise HTTPException(status_code=403, detail="You do not have access to this document")
     return match

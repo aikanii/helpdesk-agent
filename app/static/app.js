@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 
-const state = { tickets: [], docs: [], stats: {}, notifications: [], token: localStorage.getItem('relay_token'), user: null };
+const state = { tickets: [], docs: [], stats: {}, notifications: [], token: localStorage.getItem('relay_token'), user: null, showAllTickets: false, showAllDocs: false };
 
 async function getJson(url, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -20,6 +20,7 @@ function updateUserProfile(user) {
   $('#profileAvatar').textContent = initials;
   $('#topAvatar').textContent = initials;
   $('#uploadKnowledgeBtn')?.classList.toggle('hidden-app', !['admin', 'manager'].includes(user.role));
+  $('#inviteUserBtn')?.classList.toggle('hidden-app', user.role !== 'admin');
 }
 
 function showAuthenticatedApp(user) {
@@ -27,6 +28,7 @@ function showAuthenticatedApp(user) {
   $('#authGate').classList.add('hidden-app');
   $('#appShell').classList.remove('hidden-app');
   loadDashboard();
+  loadNotifications();
 }
 
 function showLogin() {
@@ -73,7 +75,8 @@ function renderTickets(tickets = state.tickets) {
     rows.innerHTML = '<tr><td colspan="6" class="loading">No tickets match this view.</td></tr>';
     return;
   }
-  rows.innerHTML = tickets.slice(0, 7).map(ticket => `
+  const visibleTickets = state.showAllTickets ? tickets : tickets.slice(0, 7);
+  rows.innerHTML = visibleTickets.map(ticket => `
     <tr class="ticket-row" data-ticket-id="${ticket.id}">
       <td><strong>${escapeHtml(ticket.ticket_number)}</strong><small>${escapeHtml(ticket.title)}</small></td>
       <td><strong>${escapeHtml(ticket.assignee || 'Service Desk')}</strong><small>${escapeHtml(ticket.category)}</small></td>
@@ -82,33 +85,86 @@ function renderTickets(tickets = state.tickets) {
       <td>${relativeTime(ticket.created_at)}</td>
       <td><button class="row-more" aria-label="More options">•••</button></td>
     </tr>`).join('');
-  $('#queueSummary').textContent = `Showing ${Math.min(tickets.length, 7)} of ${tickets.length} tickets`;
+  $('#queueSummary').textContent = state.showAllTickets ? `Showing all ${tickets.length} tickets` : `Showing ${Math.min(tickets.length, 7)} of ${tickets.length} tickets`;
 }
 
 function renderDocs(docs = state.docs) {
   const list = $('#docList');
   if (!docs.length) { list.innerHTML = '<div class="loading">No matching runbooks.</div>'; return; }
-  list.innerHTML = docs.slice(0, 4).map(doc => `
+  const visibleDocs = state.showAllDocs ? docs : docs.slice(0, 4);
+  list.innerHTML = visibleDocs.map(doc => `
     <a class="doc-item" href="#knowledge" data-doc-id="${escapeHtml(doc.id)}">
       <div class="doc-title"><i>⌁</i><span>${escapeHtml(doc.title)}</span></div>
       <div class="doc-meta"><span>${escapeHtml(doc.category)} · updated ${escapeHtml(doc.updated)}</span><span class="doc-score">${doc.score ? `${Math.round(doc.score * 100)}% match` : 'Runbook'}</span></div>
     </a>`).join('');
 }
 
-function renderNotifications() {
-  const unread = state.notifications.filter(notification => !notification.read_at);
-  const badge = $('#notificationBadge');
-  badge.textContent = unread.length > 9 ? '9+' : unread.length;
-  badge.classList.toggle('hidden-app', unread.length === 0);
-  const panel = $('#notificationPanel');
-  panel.innerHTML = `<div class="notification-head"><strong>Notifications</strong><button class="text-button" id="markAllRead">Mark all read</button></div>${state.notifications.length ? state.notifications.slice(0, 8).map(notification => `<button class="notification-item ${notification.read_at ? '' : 'unread'}" data-notification-id="${escapeHtml(notification.id)}"><span class="notification-dot"></span><span><strong>${escapeHtml(notification.title)}</strong><small>${escapeHtml(notification.body)}</small><em>${relativeTime(notification.created_at)}</em></span></button>`).join('') : '<div class="notification-empty">You are all caught up.</div>'}`;
+function switchView(view) {
+  const overviewSelectors = ['.page-heading', '.hero-grid', '.result-panel', '.stats-grid', '.lower-grid'];
+  overviewSelectors.forEach(selector => document.querySelector(selector)?.classList.toggle('secondary-hidden', view !== 'overview'));
+  document.querySelectorAll('.workspace-view').forEach(section => section.classList.add('hidden-app'));
+  if (view !== 'overview') document.querySelector(`#${view}View`)?.classList.remove('hidden-app');
+  document.querySelectorAll('.nav-link[data-view]').forEach(link => link.classList.toggle('active', link.dataset.view === view));
+  if (view === 'analytics') loadAnalytics();
+  if (view === 'team') loadTeam();
+  if (view === 'settings') loadSettings();
+}
+
+async function loadAnalytics() {
+  try {
+    const data = await getJson('/api/analytics/overview');
+    $('#analyticsTickets').textContent = data.totals.tickets;
+    $('#analyticsOpen').textContent = data.totals.open;
+    $('#analyticsBreaches').textContent = data.totals.sla_breached;
+    $('#analyticsAutomation').textContent = `${data.totals.automation_rate}%`;
+    $('#analyticsJobs').textContent = data.totals.jobs;
+    $('#analyticsJobsMeta').textContent = `${data.totals.jobs_completed} completed · ${data.totals.jobs_failed} failed`;
+    $('#feedbackRate').textContent = `${data.totals.feedback_helpful_rate}%`;
+    $('#feedbackBar').style.width = `${data.totals.feedback_helpful_rate}%`;
+    const maxVolume = Math.max(1, ...data.daily_volume.map(item => item.tickets));
+    $('#volumeChart').innerHTML = data.daily_volume.map(item => `<div class="volume-column"><div class="volume-bar" style="height:${Math.max(8, item.tickets / maxVolume * 100)}%" title="${item.tickets} tickets"></div><small>${item.date.slice(5)}</small></div>`).join('');
+    const renderBars = (values, formatter = value => value) => { const max = Math.max(1, ...Object.values(values)); return Object.entries(values).sort((a,b) => b[1]-a[1]).map(([label,value]) => `<div class="bar-row"><span>${escapeHtml(label)}</span><div><i style="width:${Math.max(4, value / max * 100)}%"></i></div><b>${formatter(value)}</b></div>`).join('') || '<div class="loading">No data yet.</div>'; };
+    $('#categoryChart').innerHTML = renderBars(data.by_category);
+    $('#teamChart').innerHTML = renderBars(data.by_team, value => value);
+  } catch (error) { showToast(error.message); }
+}
+
+async function loadTeam() {
+  try {
+    const [users, rules] = await Promise.all([getJson('/api/auth/users'), getJson('/api/routing/rules')]);
+    $('#teamRows').innerHTML = users.map(user => `<tr><td><strong>${escapeHtml(user.full_name)}</strong><small>${escapeHtml(user.email)}</small></td><td>${state.user.role === 'admin' && user.id !== state.user.id ? `<select class="role-select" data-role-id="${user.id}"><option value="requester" ${user.role === 'requester' ? 'selected' : ''}>requester</option><option value="agent" ${user.role === 'agent' ? 'selected' : ''}>agent</option><option value="manager" ${user.role === 'manager' ? 'selected' : ''}>manager</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>admin</option></select>` : `<span class="role-pill">${escapeHtml(user.role)}</span>`}</td><td><span class="status-pill ${user.is_active ? 'resolved' : ''}">${user.is_active ? 'Active' : 'Inactive'}</span></td><td>${state.user.role === 'admin' && user.id !== state.user.id ? `<button class="row-action" data-user-id="${user.id}" data-user-active="${!user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="loading">No team members.</td></tr>';
+    $('#routingRows').innerHTML = rules.map(rule => `<div class="routing-row"><div><strong>${escapeHtml(rule.category)}</strong><small>Updated by ${escapeHtml(rule.updated_by)}</small></div><input class="route-team" data-category="${escapeHtml(rule.category)}" value="${escapeHtml(rule.team)}" /><input class="route-sla" data-category="${escapeHtml(rule.category)}" type="number" min="1" max="168" value="${rule.sla_hours}" /><label class="route-toggle"><input class="route-escalate" data-category="${escapeHtml(rule.category)}" type="checkbox" ${rule.auto_escalate_high ? 'checked' : ''}/> High</label><button class="row-action" data-save-rule="${escapeHtml(rule.category)}">Save</button></div>`).join('');
+  } catch (error) { $('#teamRows').innerHTML = `<tr><td colspan="4" class="loading">${escapeHtml(error.message)}</td></tr>`; $('#routingRows').innerHTML = `<div class="loading">${escapeHtml(error.message)}</div>`; }
+}
+
+async function loadSettings() {
+  try {
+    const [profile, preferences] = await Promise.all([getJson('/api/auth/me'), getJson('/api/notifications/preferences')]);
+    $('#profileNameInput').value = profile.full_name; $('#profileEmailInput').value = profile.email;
+    $('#prefInApp').checked = preferences.in_app_enabled; $('#prefEmail').checked = preferences.email_enabled; $('#prefSla').checked = preferences.email_on_sla_breach;
+    try {
+      const integration = await getJson('/api/integrations/jira/status');
+      $('#integrationSettings').innerHTML = `<div class="setting-service"><span class="service-icon ${integration.configured ? 'green' : 'amber'}">J</span><div><strong>Jira Service Management</strong><small>${integration.configured ? `Connected to ${escapeHtml(integration.project_key)}` : 'Not configured'}</small></div><span class="status-pill ${integration.configured ? 'resolved' : 'needs-review'}">${integration.configured ? 'Connected' : 'Setup needed'}</span></div>`;
+    } catch (error) { $('#integrationSettings').innerHTML = '<div class="setting-service"><span class="service-icon amber">J</span><div><strong>Jira Service Management</strong><small>Admin access required to view integration status</small></div></div>'; }
+  } catch (error) { showToast(error.message); }
+}
+
+async function loadNotifications() {
+  try {
+    const result = await getJson('/api/notifications');
+    state.notifications = result.items || [];
+    const unread = result.unread_count || 0;
+    $('#notificationBadge').textContent = unread ? String(unread > 9 ? '9+' : unread) : '';
+    $('#notificationBadge').classList.toggle('visible', unread > 0);
+    $('#notificationList').innerHTML = state.notifications.length ? state.notifications.map(item => `<button class="notification-item ${item.read_at ? '' : 'unread'}" data-notification-id="${escapeHtml(item.id)}"><span class="notification-icon">${item.notification_type === 'warning' ? '!' : 'i'}</span><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.message)}</small><em>${relativeTime(item.created_at)}</em></span></button>`).join('') : '<div class="notification-empty">You are all caught up.</div>';
+  } catch (error) { $('#notificationList').innerHTML = `<div class="notification-empty">${escapeHtml(error.message)}</div>`; }
 }
 
 async function loadDashboard() {
   try {
-    const [stats, tickets, docs, notifications] = await Promise.all([getJson('/api/stats'), getJson('/api/tickets'), getJson('/api/docs'), getJson('/api/notifications')]);
-    state.stats = stats; state.tickets = tickets; state.docs = docs; state.notifications = notifications;
-    renderStats(); renderTickets(); renderDocs(); renderNotifications();
+    const [stats, tickets, docs] = await Promise.all([getJson('/api/stats'), getJson('/api/tickets'), getJson('/api/docs')]);
+    state.stats = stats; state.tickets = tickets; state.docs = docs;
+    renderStats(); renderTickets(); renderDocs();
   } catch (error) {
     showToast(error.message);
   }
@@ -174,18 +230,69 @@ $('#logoutBtn').addEventListener('click', () => {
   showLogin();
 });
 
-$('#notificationBtn').addEventListener('click', (event) => {
-  event.stopPropagation();
-  $('#notificationPanel').classList.toggle('hidden-app');
-});
-$('#notificationPanel').addEventListener('click', async (event) => {
-  const markAll = event.target.closest('#markAllRead');
-  if (markAll) { await getJson('/api/notifications/read-all', { method: 'POST' }); state.notifications.forEach(notification => notification.read_at = new Date().toISOString()); renderNotifications(); return; }
-  const item = event.target.closest('[data-notification-id]');
-  if (item) { await getJson(`/api/notifications/${item.dataset.notificationId}/read`, { method: 'PATCH' }); const notification = state.notifications.find(entry => entry.id === item.dataset.notificationId); if (notification) notification.read_at = new Date().toISOString(); renderNotifications(); }
-});
-document.addEventListener('click', (event) => { if (!event.target.closest('#notificationPanel') && !event.target.closest('#notificationBtn')) $('#notificationPanel').classList.add('hidden-app'); });
+document.querySelectorAll('.nav-link[data-view]').forEach(link => link.addEventListener('click', (event) => {
+  event.preventDefault();
+  const view = link.dataset.view;
+  switchView(view);
+  if (view === 'overview' && link.getAttribute('href') !== '#overview') document.querySelector(link.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+}));
+$('#refreshAnalytics').addEventListener('click', loadAnalytics);
 
+$('#inviteUserBtn').addEventListener('click', async () => {
+  const fullName = window.prompt('Teammate name');
+  if (!fullName) return;
+  const email = window.prompt('Teammate email');
+  if (!email) return;
+  const password = window.prompt('Temporary password (8+ characters)');
+  if (!password) return;
+  const role = window.prompt('Role: requester, agent, manager, or admin', 'agent') || 'agent';
+  try { await getJson('/api/auth/users', { method: 'POST', body: JSON.stringify({ full_name: fullName, email, password, role }) }); showToast('Teammate added'); await loadTeam(); } catch (error) { showToast(error.message); }
+});
+$('#teamRows').addEventListener('change', async (event) => {
+  const select = event.target.closest('[data-role-id]');
+  if (!select) return;
+  try { await getJson(`/api/auth/users/${select.dataset.roleId}/role?role=${encodeURIComponent(select.value)}`, { method: 'PATCH' }); showToast('Role updated'); await loadTeam(); } catch (error) { showToast(error.message); await loadTeam(); }
+});
+$('#teamRows').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-user-id]');
+  if (!button) return;
+  try { await getJson(`/api/auth/users/${button.dataset.userId}/active?active=${button.dataset.userActive}`, { method: 'PATCH' }); showToast('Team member updated'); await loadTeam(); } catch (error) { showToast(error.message); }
+});
+$('#routingRows').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-save-rule]');
+  if (!button) return;
+  const category = button.dataset.saveRule;
+  const team = document.querySelector(`.route-team[data-category="${CSS.escape(category)}"]`).value;
+  const sla_hours = Number(document.querySelector(`.route-sla[data-category="${CSS.escape(category)}"]`).value);
+  const auto_escalate_high = document.querySelector(`.route-escalate[data-category="${CSS.escape(category)}"]`).checked;
+  try { await getJson('/api/routing/rules', { method: 'PUT', body: JSON.stringify({ category, team, sla_hours, auto_escalate_high }) }); showToast('Routing rule saved'); await loadTeam(); } catch (error) { showToast(error.message); }
+});
+
+$('#profileForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { const profile = await getJson('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ full_name: $('#profileNameInput').value, email: $('#profileEmailInput').value }) }); updateUserProfile(profile); $('#profileMessage').textContent = 'Profile saved'; showToast('Profile updated'); } catch (error) { $('#profileMessage').textContent = error.message; }
+});
+$('#passwordForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { await getJson('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: $('#currentPasswordInput').value, new_password: $('#newPasswordInput').value }) }); $('#passwordMessage').textContent = 'Password updated'; event.target.reset(); showToast('Password updated'); } catch (error) { $('#passwordMessage').textContent = error.message; }
+});
+$('#notificationPreferencesForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { await getJson('/api/notifications/preferences', { method: 'PUT', body: JSON.stringify({ in_app_enabled: $('#prefInApp').checked, email_enabled: $('#prefEmail').checked, email_on_assignment: true, email_on_status_change: true, email_on_sla_breach: $('#prefSla').checked }) }); $('#preferencesMessage').textContent = 'Preferences saved'; showToast('Preferences saved'); } catch (error) { $('#preferencesMessage').textContent = error.message; }
+});
+
+$('#notificationBtn').addEventListener('click', (event) => { event.stopPropagation(); $('#notificationPanel').classList.toggle('hidden-app'); });
+document.addEventListener('click', (event) => { if (!event.target.closest('#notificationPanel') && !event.target.closest('#notificationBtn')) $('#notificationPanel').classList.add('hidden-app'); });
+$('#readAllNotifications').addEventListener('click', async () => { try { await getJson('/api/notifications/read-all', { method: 'POST' }); await loadNotifications(); } catch (error) { showToast(error.message); } });
+$('#notificationList').addEventListener('click', async (event) => { const item = event.target.closest('[data-notification-id]'); if (!item) return; try { await getJson(`/api/notifications/${item.dataset.notificationId}/read`, { method: 'PATCH' }); await loadNotifications(); } catch (error) { showToast(error.message); } });
+document.querySelectorAll('.more-button').forEach(button => button.addEventListener('click', () => showToast('More workspace actions will be available as this view grows.')));
+$('#globalSearchBtn').addEventListener('click', () => { switchView('overview'); $('#issueInput').focus(); });
+$('#managePlanBtn').addEventListener('click', () => showToast('Plan management is available to workspace administrators.'));
+$('#statusPageBtn').addEventListener('click', () => { switchView('settings'); document.querySelector('#integrationSettings')?.scrollIntoView({ behavior: 'smooth' }); });
+$('#viewAllTicketsBtn').addEventListener('click', () => { state.showAllTickets = !state.showAllTickets; $('#viewAllTicketsBtn').innerHTML = state.showAllTickets ? 'Show recent tickets <span>↑</span>' : 'View all tickets <span>→</span>'; renderTickets(); });
+$('#browseDocsBtn').addEventListener('click', () => { state.showAllDocs = !state.showAllDocs; $('#browseDocsBtn').innerHTML = state.showAllDocs ? 'Show top runbooks <span>↑</span>' : 'Browse all documentation <span>→</span>'; renderDocs(); });
+$('#attachContextBtn').addEventListener('click', () => showToast('Attachments can be added from the ticket timeline after diagnosis.'));
+$('#addContextBtn').addEventListener('click', () => { const input = $('#issueInput'); input.value += '\\n\\nContext: '; input.focus(); showToast('Added a context prompt'); });
 $('#uploadKnowledgeBtn').addEventListener('click', () => $('#knowledgeFileInput').click());
 $('#knowledgeFileInput').addEventListener('change', async (event) => {
   const file = event.target.files[0];
@@ -284,7 +391,7 @@ async function addTicketNote(ticketId) {
 document.addEventListener('click', (event) => {
   if (event.target.dataset.closeModal === 'true' || event.target.id === 'closeModal') closeModal();
   const row = event.target.closest('.ticket-row');
-  if (row && !event.target.closest('.row-more')) openTicket(row.dataset.ticketId);
+  if (row) openTicket(row.dataset.ticketId);
   const feedback = event.target.closest('[data-rating]');
   if (feedback) {
     getJson('/api/feedback', { method: 'POST', body: JSON.stringify({ run_id: feedback.dataset.runId, ticket_number: feedback.dataset.ticketNumber || null, rating: feedback.dataset.rating }) }).then(() => { feedback.parentElement.querySelectorAll('[data-rating]').forEach(button => button.disabled = true); showToast('Thanks for the feedback'); }).catch(error => showToast(error.message));

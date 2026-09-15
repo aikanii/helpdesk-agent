@@ -65,7 +65,7 @@ function renderStats() {
 }
 
 function priorityClass(priority) { return String(priority || '').toLowerCase(); }
-function statusClass(status) { return status === 'In progress' ? 'progress' : String(status || '').toLowerCase(); }
+function statusClass(status) { if (status === 'In progress') return 'progress'; if (status === 'Needs review') return 'needs-review'; return String(status || '').toLowerCase(); }
 
 function renderTickets(tickets = state.tickets) {
   const rows = $('#ticketRows');
@@ -116,6 +116,7 @@ function renderResult(result) {
       <div><div class="result-kicker">✦ DIAGNOSIS COMPLETE · ${escapeHtml(result.run_id)}</div><h2>${escapeHtml(result.intent)}</h2><p>${escapeHtml(result.summary)} <span class="status-pill ${priorityClass(result.priority)}">${escapeHtml(result.priority)} priority</span></p></div>
       <div class="confidence" title="Agent confidence">${escapeHtml(result.confidence)}%</div>
     </div>
+    ${result.requires_approval ? `<div class="safety-notice"><strong>Human review required.</strong> Relay paused external or high-impact actions. ${escapeHtml((result.safety_flags || []).join(', '))}</div>` : ''}
     <div class="result-body">
       <div><h4>RECOMMENDED NEXT STEPS</h4><div class="action-list">${result.actions.map((action, index) => `<div class="action-item"><span class="action-number">${index + 1}</span><div><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.detail)}</p></div></div>`).join('')}</div></div>
       <div><h4>RETRIEVED EVIDENCE</h4><div class="evidence-list">${result.evidence.length ? result.evidence.map(doc => `<div class="evidence-item"><strong>${escapeHtml(doc.title)}</strong><p>${escapeHtml(doc.excerpt)}</p><span>${Math.round(doc.score * 100)}% relevance</span></div>`).join('') : '<div class="evidence-item"><p>No matching documents found. Add a runbook to improve future diagnoses.</p></div>'}</div></div>
@@ -183,7 +184,7 @@ $('#issueInput').addEventListener('keydown', (event) => { if ((event.metaKey || 
 $('.suggestions').addEventListener('click', (event) => { const prompt = event.target.closest('[data-prompt]')?.dataset.prompt; if (prompt) { $('#issueInput').value = prompt; $('#issueInput').focus(); } });
 $('#newRequestBtn').addEventListener('click', () => { $('#issueInput').value = ''; $('#issueInput').focus(); $('#resultPanel').classList.add('hidden'); });
 $('#statusFilter').addEventListener('click', () => {
-  const options = ['All', 'Open', 'In progress', 'Escalated', 'Resolved'];
+  const options = ['All', 'Open', 'In progress', 'Needs review', 'Escalated', 'Resolved'];
   const current = $('#statusFilter').dataset.value || 'All';
   const next = options[(options.indexOf(current) + 1) % options.length];
   $('#statusFilter').dataset.value = next; $('#statusFilter').innerHTML = `${next === 'All' ? 'All statuses' : next} <span>⌄</span>`;
@@ -201,14 +202,15 @@ async function openTicket(ticketId) {
     $('#modalTitle').textContent = `${ticket.ticket_number} · ${ticket.title}`;
     const timeline = events.length ? events.map(event => `<div class="timeline-item"><span class="timeline-dot ${event.event_type}"></span><div><strong>${escapeHtml(event.message)}</strong><small>${escapeHtml(event.actor)} · ${relativeTime(event.created_at)}</small></div></div>`).join('') : '<p class="empty-note">No activity recorded yet.</p>';
     $('#ticketDetail').innerHTML = `
-      <div class="detail-summary"><div><span class="status-pill ${statusClass(ticket.status)}">${escapeHtml(ticket.status)}</span><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)} priority</span></div><span class="detail-team">${escapeHtml(ticket.assignee || 'Service Desk')}</span></div>
+      <div class="detail-summary"><div><span class="status-pill ${statusClass(ticket.status)}">${escapeHtml(ticket.status)}</span><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)} priority</span></div><span class="detail-team">${escapeHtml(ticket.assignee || 'Service Desk')}</span></div>${ticket.requires_approval ? '<span class="status-pill needs-review">Approval required</span>' : ''}</div>
       <div class="integration-card"><div><span class="integration-icon">J</span><div><strong>${ticket.external_id ? `Linked Jira issue ${escapeHtml(ticket.external_id)}` : 'Jira Service Management'}</strong><small>${ticket.external_id ? 'Last sync ' + (ticket.last_synced_at ? relativeTime(ticket.last_synced_at) : 'pending') : 'Not linked yet'}</small></div></div><div class="integration-actions">${ticket.external_url ? `<a href="${escapeHtml(ticket.external_url)}" target="_blank" rel="noreferrer" class="jira-link">Open ↗</a>` : ''}<button class="modal-action" data-sync-jira="true">${ticket.external_id ? 'Sync' : 'Create Jira issue'}</button></div></div>
       <p class="detail-description">${escapeHtml(ticket.description)}</p>
       <div class="detail-metrics"><div><span>Category</span><strong>${escapeHtml(ticket.category)}</strong></div><div><span>SLA due</span><strong>${ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set'}</strong></div><div><span>Source</span><strong>${escapeHtml(ticket.source)}</strong></div></div>
       <div class="modal-section"><h4>ACTIVITY TIMELINE</h4><div class="timeline">${timeline}</div></div>
-      <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions"><button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>${ticket.status !== 'Escalated' ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button></div>`;
+      <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions">${ticket.requires_approval ? '<button class="modal-action approve" data-approve-ticket="true">Approve safety review</button>' : ''}<button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>${ticket.status !== 'Escalated' && !ticket.requires_approval ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button></div>`;
     document.querySelectorAll('[data-ticket-status]').forEach(button => button.addEventListener('click', () => updateTicketStatus(ticket.id, button.dataset.ticketStatus)));
     $('[data-escalate-ticket]')?.addEventListener('click', () => escalateTicket(ticket.id));
+    $('[data-approve-ticket]')?.addEventListener('click', () => approveTicket(ticket.id));
     $('[data-sync-jira]')?.addEventListener('click', () => syncJiraTicket(ticket.id));
     $('[data-add-note]')?.addEventListener('click', () => addTicketNote(ticket.id));
   } catch (error) { $('#ticketDetail').innerHTML = `<div class="loading">${escapeHtml(error.message)}</div>`; }
@@ -222,6 +224,15 @@ async function escalateTicket(ticketId) {
   const reason = window.prompt('Why should this ticket be escalated?', 'User impact requires immediate attention');
   if (reason === null) return;
   try { await getJson(`/api/tickets/${ticketId}/escalate`, { method: 'POST', body: JSON.stringify({ reason }) }); showToast('Ticket escalated with a 2-hour SLA'); closeModal(); await loadDashboard(); } catch (error) { showToast(error.message); }
+}
+
+async function approveTicket(ticketId) {
+  try {
+    await getJson(`/api/tickets/${ticketId}/approve`, { method: 'POST' });
+    showToast('Safety review approved');
+    await openTicket(ticketId);
+    await loadDashboard();
+  } catch (error) { showToast(error.message); }
 }
 
 async function syncJiraTicket(ticketId) {

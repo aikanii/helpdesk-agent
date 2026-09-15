@@ -1,12 +1,48 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 
-const state = { tickets: [], docs: [], stats: {} };
+const state = { tickets: [], docs: [], stats: {}, token: localStorage.getItem('relay_token'), user: null };
 
 async function getJson(url, options = {}) {
-  const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const response = await fetch(url, { ...options, headers });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Something went wrong');
   return response.json();
+}
+
+function updateUserProfile(user) {
+  state.user = user;
+  const initials = user.full_name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
+  $('#profileName').textContent = user.full_name;
+  $('#profileRole').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+  $('#profileAvatar').textContent = initials;
+  $('#topAvatar').textContent = initials;
+}
+
+function showAuthenticatedApp(user) {
+  updateUserProfile(user);
+  $('#authGate').classList.add('hidden-app');
+  $('#appShell').classList.remove('hidden-app');
+  loadDashboard();
+}
+
+function showLogin() {
+  $('#appShell').classList.add('hidden-app');
+  $('#authGate').classList.remove('hidden-app');
+  $('#loginEmail').focus();
+}
+
+async function authenticate() {
+  if (!state.token) { showLogin(); return; }
+  try {
+    const user = await getJson('/api/auth/me');
+    showAuthenticatedApp(user);
+  } catch (error) {
+    localStorage.removeItem('relay_token');
+    state.token = null;
+    showLogin();
+  }
 }
 
 function relativeTime(dateString) {
@@ -103,6 +139,29 @@ async function runDiagnosis() {
 
 function showToast(message) { const toast = $('#toast'); toast.textContent = message; toast.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => toast.classList.remove('show'), 3000); }
 
+$('#loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  const error = $('#loginError');
+  button.disabled = true;
+  error.textContent = '';
+  try {
+    const result = await getJson('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: $('#loginEmail').value, password: $('#loginPassword').value }) });
+    state.token = result.access_token;
+    localStorage.setItem('relay_token', state.token);
+    showAuthenticatedApp(result.user);
+  } catch (requestError) {
+    error.textContent = requestError.message || 'Unable to sign in';
+  } finally { button.disabled = false; }
+});
+
+$('#logoutBtn').addEventListener('click', () => {
+  localStorage.removeItem('relay_token');
+  state.token = null;
+  state.user = null;
+  showLogin();
+});
+
 $('#diagnoseBtn').addEventListener('click', runDiagnosis);
 $('#issueInput').addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') runDiagnosis(); });
 $('.suggestions').addEventListener('click', (event) => { const prompt = event.target.closest('[data-prompt]')?.dataset.prompt; if (prompt) { $('#issueInput').value = prompt; $('#issueInput').focus(); } });
@@ -166,4 +225,4 @@ document.addEventListener('click', (event) => {
 
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeModal(); });
 
-loadDashboard();
+authenticate();

@@ -14,8 +14,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .agent import agent
+from .auth import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from .core import settings
-from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketEvent, init_db
+from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketEvent, User, init_db
 from .rag import index
 from .routing import route_ticket
 from .schemas import (
@@ -30,15 +31,36 @@ from .schemas import (
     EventCreate,
     FeedbackRequest,
     KnowledgeCreate,
+    LoginRequest,
+    TokenOut,
     TicketCreate,
     TicketEventOut,
     TicketOut,
+    UserCreate,
+    UserOut,
 )
+
+
+def seed_admin() -> None:
+    db = SessionLocal()
+    try:
+        existing = db.scalar(select(User).where(User.email == settings.admin_email.lower()))
+        if not existing:
+            db.add(User(
+                email=settings.admin_email.lower(),
+                full_name=settings.admin_name,
+                password_hash=hash_password(settings.admin_password),
+                role="admin",
+            ))
+            db.commit()
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    seed_admin()
     seed_demo_data()
     yield
 
@@ -102,13 +124,61 @@ def serve_app():
     return FileResponse(static_dir / "index.html")
 
 
+@app.post("/api/auth/login", response_model=TokenOut)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(func.lower(User.email) == payload.username.strip().lower()))
+    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password", headers={"WWW-Authenticate": "Bearer"})
+    return {
+        "access_token": create_access_token(user),
+        "token_type": "bearer",
+        "expires_in": settings.access_token_minutes * 60,
+        "user": {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role},
+    }
+
+
+@app.get("/api/auth/me", response_model=UserOut)
+def current_user_profile(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@app.get("/api/auth/users", response_model=list[UserOut])
+def list_users(current_admin: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    return db.scalars(select(User).order_by(User.created_at.desc())).all()
+
+
+@app.post("/api/auth/users", response_model=UserOut)
+def create_user(payload: UserCreate, current_admin: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if db.scalar(select(User).where(func.lower(User.email) == email)):
+        raise HTTPException(status_code=409, detail="A user with that email already exists")
+    user = User(email=email, full_name=payload.full_name.strip(), password_hash=hash_password(payload.password), role=payload.role)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.patch("/api/auth/users/{user_id}/active", response_model=UserOut)
+def set_user_active(user_id: int, active: bool, current_admin: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_admin.id and not active:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+    user.is_active = active
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}
 
 
 @app.get("/api/stats")
-def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
+def stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     tickets = db.scalars(select(Ticket)).all()
     open_tickets = [ticket for ticket in tickets if ticket.status != "Resolved"]
     urgent = [ticket for ticket in open_tickets if ticket.priority == "High"]
@@ -123,8 +193,8 @@ def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.post("/api/diagnose", response_model=DiagnoseResponse)
-def diagnose(payload: DiagnoseRequest, db: Session = Depends(get_db)):
-    return agent.run(db, payload.message, payload.user_email, payload.user_name, payload.create_ticket)
+def diagnose(payload: DiagnoseRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket)
 
 
 def conversation_payload(db: Session, conversation: Conversation) -> dict:
@@ -145,11 +215,11 @@ def conversation_payload(db: Session, conversation: Conversation) -> dict:
 
 
 @app.post("/api/conversations", response_model=ConversationOut)
-def create_conversation(payload: ConversationCreate, db: Session = Depends(get_db)):
+def create_conversation(payload: ConversationCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     conversation = Conversation(
         id=f"conv_{uuid.uuid4().hex[:12]}",
-        user_name=payload.user_name,
-        user_email=payload.user_email,
+        user_name=current_user.full_name,
+        user_email=current_user.email,
     )
     db.add(conversation)
     db.commit()
@@ -158,39 +228,46 @@ def create_conversation(payload: ConversationCreate, db: Session = Depends(get_d
 
 
 @app.get("/api/conversations", response_model=list[ConversationOut])
-def list_conversations(db: Session = Depends(get_db)):
-    conversations = db.scalars(select(Conversation).order_by(Conversation.updated_at.desc()).limit(50)).all()
+def list_conversations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = select(Conversation).order_by(Conversation.updated_at.desc()).limit(50)
+    if current_user.role == "requester":
+        query = query.where(Conversation.user_email == current_user.email)
+    conversations = db.scalars(query).all()
     return [conversation_payload(db, conversation) for conversation in conversations]
 
 
 @app.get("/api/conversations/{conversation_id}", response_model=ConversationOut)
-def get_conversation(conversation_id: str, db: Session = Depends(get_db)):
+def get_conversation(conversation_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     conversation = db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if current_user.role == "requester" and conversation.user_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this conversation")
     return conversation_payload(db, conversation)
 
 
 @app.post("/api/conversations/{conversation_id}/messages", response_model=DiagnoseResponse)
-def send_conversation_message(conversation_id: str, payload: ChatRequest, db: Session = Depends(get_db)):
+def send_conversation_message(conversation_id: str, payload: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     conversation = db.get(Conversation, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if current_user.role == "requester" and conversation.user_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this conversation")
     user_message = ConversationMessage(conversation_id=conversation.id, role="user", content=payload.message)
     db.add(user_message)
     db.flush()
-    result = agent.run(db, payload.message, payload.user_email, payload.user_name, payload.create_ticket)
+    result = agent.run(db, payload.message, current_user.email, current_user.full_name, payload.create_ticket)
     assistant_text = f"{result['summary']} Recommended next step: {result['actions'][0]['detail']}"
     db.add(ConversationMessage(conversation_id=conversation.id, role="assistant", content=assistant_text, payload=result))
-    conversation.user_name = payload.user_name
-    conversation.user_email = payload.user_email
+    conversation.user_name = current_user.full_name
+    conversation.user_email = current_user.email
     conversation.updated_at = datetime.now(timezone.utc)
     db.commit()
     return result
 
 
 @app.post("/api/feedback")
-def submit_feedback(payload: FeedbackRequest, db: Session = Depends(get_db)):
+def submit_feedback(payload: FeedbackRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     feedback = AgentFeedback(**payload.model_dump())
     db.add(feedback)
     db.commit()
@@ -198,34 +275,39 @@ def submit_feedback(payload: FeedbackRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/feedback/summary")
-def feedback_summary(db: Session = Depends(get_db)):
+def feedback_summary(current_user: User = Depends(require_roles("admin", "manager")), db: Session = Depends(get_db)):
     rows = db.scalars(select(AgentFeedback)).all()
     helpful = len([row for row in rows if row.rating == "helpful"])
     return {"total": len(rows), "helpful": helpful, "not_helpful": len(rows) - helpful}
 
 
 @app.get("/api/tickets/{ticket_id}", response_model=TicketOut)
-def get_ticket(ticket_id: int, db: Session = Depends(get_db)):
+def get_ticket(ticket_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if current_user.role == "requester" and ticket.requester_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this ticket")
     return ticket
 
 
 @app.get("/api/tickets/{ticket_id}/events", response_model=list[TicketEventOut])
-def list_ticket_events(ticket_id: int, db: Session = Depends(get_db)):
-    if not db.get(Ticket, ticket_id):
+def list_ticket_events(ticket_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if current_user.role == "requester" and ticket.requester_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this ticket")
     return db.scalars(
         select(TicketEvent).where(TicketEvent.ticket_id == ticket_id).order_by(TicketEvent.created_at.asc())
     ).all()
 
 
 @app.post("/api/tickets/{ticket_id}/events", response_model=TicketEventOut)
-def add_ticket_event(ticket_id: int, payload: EventCreate, db: Session = Depends(get_db)):
+def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
     if not db.get(Ticket, ticket_id):
         raise HTTPException(status_code=404, detail="Ticket not found")
-    event = TicketEvent(ticket_id=ticket_id, event_type="note", actor=payload.actor, message=payload.message)
+    event = TicketEvent(ticket_id=ticket_id, event_type="note", actor=current_user.full_name, message=payload.message)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -237,6 +319,7 @@ def list_tickets(
     status: str | None = None,
     priority: str | None = None,
     q: str | None = Query(default=None, max_length=100),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     query = select(Ticket).order_by(Ticket.created_at.desc())
@@ -246,15 +329,18 @@ def list_tickets(
         query = query.where(Ticket.priority == priority)
     if q:
         query = query.where(Ticket.title.ilike(f"%{q}%"))
+    if current_user.role == "requester":
+        query = query.where(Ticket.requester_email == current_user.email)
     return db.scalars(query).all()
 
 
 @app.post("/api/tickets", response_model=TicketOut)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
+def create_ticket(payload: TicketCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     number = f"HD-{datetime.now(timezone.utc).strftime('%m%d%H%M')}"
     route = route_ticket(payload.category, payload.priority)
     ticket = Ticket(
         ticket_number=number,
+        requester_email=current_user.email,
         source="Portal",
         status="Escalated" if route["escalated"] else "Open",
         assignee=payload.assignee or route["assignee"],
@@ -274,7 +360,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/tickets/{ticket_id}/escalate", response_model=TicketOut)
-def escalate_ticket(ticket_id: int, payload: EscalationRequest, db: Session = Depends(get_db)):
+def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -287,13 +373,13 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, db: Session = De
     ticket.escalation_reason = payload.reason or "Escalated manually by an agent"
     db.commit()
     db.refresh(ticket)
-    record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor="Helpdesk agent")
+    record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor=current_user.full_name)
     db.commit()
     return ticket
 
 
 @app.patch("/api/tickets/{ticket_id}/status", response_model=TicketOut)
-def update_ticket_status(ticket_id: int, status: str, db: Session = Depends(get_db)):
+def update_ticket_status(ticket_id: int, status: str, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -304,30 +390,30 @@ def update_ticket_status(ticket_id: int, status: str, db: Session = Depends(get_
     db.commit()
     db.refresh(ticket)
     if previous_status != status:
-        record_event(db, ticket.id, "status_changed", f"Status changed from {previous_status} to {status}", actor="Helpdesk agent")
+        record_event(db, ticket.id, "status_changed", f"Status changed from {previous_status} to {status}", actor=current_user.full_name)
         db.commit()
     return ticket
 
 
 @app.get("/api/docs", response_model=list[DocumentOut])
-def list_docs(q: str | None = Query(default=None, max_length=100)):
+def list_docs(q: str | None = Query(default=None, max_length=100), current_user: User = Depends(get_current_user)):
     return index.search(q, limit=10) if q else index.all()
 
 
 @app.post("/api/docs", response_model=DocumentOut)
-def add_doc(payload: KnowledgeCreate):
+def add_doc(payload: KnowledgeCreate, current_user: User = Depends(require_roles("admin", "manager"))):
     return index.add(payload.title, payload.content, payload.category, payload.source)
 
 
 @app.delete("/api/docs/{doc_id}")
-def delete_doc(doc_id: str):
+def delete_doc(doc_id: str, current_user: User = Depends(require_roles("admin", "manager"))):
     if not index.delete(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted", "document_id": doc_id}
 
 
 @app.get("/api/docs/{doc_id}")
-def get_doc(doc_id: str):
+def get_doc(doc_id: str, current_user: User = Depends(get_current_user)):
     match = next((doc for doc in index.all() if doc["id"] == doc_id), None)
     if not match:
         raise HTTPException(status_code=404, detail="Document not found")

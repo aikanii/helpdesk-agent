@@ -76,6 +76,10 @@ def test_knowledge_ingestion_and_feedback(client):
     assert document.status_code == 200
     document_id = document.json()["id"]
     assert client.delete(f"/api/docs/{document_id}").status_code == 200
+    upload = client.post("/api/docs/upload", files={"file": ("test-runbook.txt", b"This uploaded runbook verifies file ingestion and chunking works.", "text/plain")})
+    assert upload.status_code == 200
+    assert upload.json()["chunk_count"] >= 1
+    assert client.delete(f"/api/docs/{upload.json()['id']}").status_code == 200
 
     feedback = client.post("/api/feedback", json={"run_id": "run_test", "rating": "helpful"})
     assert feedback.status_code == 200

@@ -186,12 +186,14 @@ async function openTicket(ticketId) {
     const timeline = events.length ? events.map(event => `<div class="timeline-item"><span class="timeline-dot ${event.event_type}"></span><div><strong>${escapeHtml(event.message)}</strong><small>${escapeHtml(event.actor)} · ${relativeTime(event.created_at)}</small></div></div>`).join('') : '<p class="empty-note">No activity recorded yet.</p>';
     $('#ticketDetail').innerHTML = `
       <div class="detail-summary"><div><span class="status-pill ${statusClass(ticket.status)}">${escapeHtml(ticket.status)}</span><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)} priority</span></div><span class="detail-team">${escapeHtml(ticket.assignee || 'Service Desk')}</span></div>
+      <div class="integration-card"><div><span class="integration-icon">J</span><div><strong>${ticket.external_id ? `Linked Jira issue ${escapeHtml(ticket.external_id)}` : 'Jira Service Management'}</strong><small>${ticket.external_id ? 'Last sync ' + (ticket.last_synced_at ? relativeTime(ticket.last_synced_at) : 'pending') : 'Not linked yet'}</small></div></div><div class="integration-actions">${ticket.external_url ? `<a href="${escapeHtml(ticket.external_url)}" target="_blank" rel="noreferrer" class="jira-link">Open ↗</a>` : ''}<button class="modal-action" data-sync-jira="true">${ticket.external_id ? 'Sync' : 'Create Jira issue'}</button></div></div>
       <p class="detail-description">${escapeHtml(ticket.description)}</p>
       <div class="detail-metrics"><div><span>Category</span><strong>${escapeHtml(ticket.category)}</strong></div><div><span>SLA due</span><strong>${ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set'}</strong></div><div><span>Source</span><strong>${escapeHtml(ticket.source)}</strong></div></div>
       <div class="modal-section"><h4>ACTIVITY TIMELINE</h4><div class="timeline">${timeline}</div></div>
       <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions"><button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>${ticket.status !== 'Escalated' ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button></div>`;
     document.querySelectorAll('[data-ticket-status]').forEach(button => button.addEventListener('click', () => updateTicketStatus(ticket.id, button.dataset.ticketStatus)));
     $('[data-escalate-ticket]')?.addEventListener('click', () => escalateTicket(ticket.id));
+    $('[data-sync-jira]')?.addEventListener('click', () => syncJiraTicket(ticket.id));
     $('[data-add-note]')?.addEventListener('click', () => addTicketNote(ticket.id));
   } catch (error) { $('#ticketDetail').innerHTML = `<div class="loading">${escapeHtml(error.message)}</div>`; }
 }
@@ -204,6 +206,15 @@ async function escalateTicket(ticketId) {
   const reason = window.prompt('Why should this ticket be escalated?', 'User impact requires immediate attention');
   if (reason === null) return;
   try { await getJson(`/api/tickets/${ticketId}/escalate`, { method: 'POST', body: JSON.stringify({ reason }) }); showToast('Ticket escalated with a 2-hour SLA'); closeModal(); await loadDashboard(); } catch (error) { showToast(error.message); }
+}
+
+async function syncJiraTicket(ticketId) {
+  try {
+    await getJson(`/api/tickets/${ticketId}/sync`, { method: 'POST' });
+    showToast('Ticket synced to Jira');
+    await openTicket(ticketId);
+    await loadDashboard();
+  } catch (error) { showToast(error.message); }
 }
 
 async function addTicketNote(ticketId) {

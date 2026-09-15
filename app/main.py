@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -20,11 +21,10 @@ from .core import settings
 from .integrations.jira import JiraError, jira
 from .integrations.service import sync_ticket_to_jira
 from .job_queue import dispatch_jira_sync, enqueue_sla_scan, queue, worker
-from .lifecycle import RESOLUTION_CODES, validate_transition
-from .models import AgentFeedback, Conversation, ConversationMessage, Job, Notification, NotificationPreference, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
-from .notifications import get_preferences, notify_ticket, notify_user_ids
+from .lifecycle import RESOLUTION_CODES, sla_state, validate_transition
+from .models import AgentFeedback, Conversation, ConversationMessage, Job, Notification, NotificationPreference, RoutingRule, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
 from .rag import ROLE_RANK, index
-from .routing import route_ticket
+from .routing import DEFAULT_RULES, route_ticket, routing_rules, seed_routing_rules
 from .schemas import (
     ChatRequest,
     ConversationCreate,
@@ -39,6 +39,13 @@ from .schemas import (
     JobOut,
     KnowledgeCreate,
     LoginRequest,
+    NotificationOut,
+    NotificationPreferenceOut,
+    NotificationPreferenceUpdate,
+    PasswordChange,
+    ProfileUpdate,
+    RoutingRuleOut,
+    RoutingRuleUpdate,
     TokenOut,
     TicketAttachmentOut,
     TicketCreate,
@@ -46,9 +53,6 @@ from .schemas import (
     TicketOut,
     TicketStatusUpdate,
     LinkRequest,
-    NotificationOut,
-    NotificationPreferenceOut,
-    NotificationPreferenceUpdate,
     WatcherRequest,
     UserCreate,
     UserOut,
@@ -60,12 +64,17 @@ def seed_admin() -> None:
     try:
         existing = db.scalar(select(User).where(User.email == settings.admin_email.lower()))
         if not existing:
-            db.add(User(
+            existing = User(
                 email=settings.admin_email.lower(),
                 full_name=settings.admin_name,
                 password_hash=hash_password(settings.admin_password),
                 role="admin",
-            ))
+            )
+            db.add(existing)
+            db.commit()
+            db.refresh(existing)
+        if not db.scalar(select(Notification).where(Notification.user_id == existing.id)):
+            db.add(Notification(id=f"ntf_{uuid.uuid4().hex}", user_id=existing.id, notification_type="info", title="Welcome to Relay", message="Your helpdesk workspace is ready. Review routing and notification settings to get started."))
             db.commit()
     finally:
         db.close()
@@ -75,6 +84,11 @@ def seed_admin() -> None:
 async def lifespan(_: FastAPI):
     init_db()
     seed_admin()
+    routing_db = SessionLocal()
+    try:
+        seed_routing_rules(routing_db)
+    finally:
+        routing_db.close()
     knowledge_db = SessionLocal()
     try:
         index.ensure_seeded(knowledge_db)
@@ -115,7 +129,7 @@ def seed_demo_data() -> None:
                 Ticket(ticket_number="HD-2B7E04", title="Laptop running slowly", description="Laptop performance degraded since the latest update.", category="Endpoint", priority="Medium", status="Resolved", assignee="Endpoint Support", source="Portal", evidence=index.search("laptop slow", db), created_at=now - timedelta(days=1, hours=3)),
             ]
             for ticket in demo:
-                route = route_ticket(ticket.category, ticket.priority)
+                route = route_ticket(ticket.category, ticket.priority, rules=routing_rules(db))
                 ticket.sla_due_at = route["sla_due_at"]
                 if route["escalated"]:
                     ticket.status = "Escalated"
@@ -167,8 +181,34 @@ def current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@app.patch("/api/auth/me", response_model=UserOut)
+def update_profile(payload: ProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.get(User, current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    email = payload.email.strip().lower()
+    existing = db.scalar(select(User).where(func.lower(User.email) == email, User.id != user.id))
+    if existing:
+        raise HTTPException(status_code=409, detail="That email address is already in use")
+    user.full_name = payload.full_name.strip()
+    user.email = email
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/api/auth/change-password")
+def change_password(payload: PasswordChange, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.get(User, current_user.id)
+    if not user or not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"status": "updated"}
+
+
 @app.get("/api/auth/users", response_model=list[UserOut])
-def list_users(current_admin: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+def list_users(current_admin: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
     return db.scalars(select(User).order_by(User.created_at.desc())).all()
 
 
@@ -192,6 +232,24 @@ def set_user_active(user_id: int, active: bool, current_admin: User = Depends(re
     if user.id == current_admin.id and not active:
         raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
     user.is_active = active
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.patch("/api/auth/users/{user_id}/role", response_model=UserOut)
+def set_user_role(user_id: int, role: str, current_admin: User = Depends(require_roles("admin")), db: Session = Depends(get_db)):
+    valid_roles = {"requester", "agent", "manager", "admin"}
+    if role not in valid_roles:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
+    if user.role == "admin" and role != "admin" and db.scalar(select(func.count(User.id)).where(User.role == "admin", User.is_active == True)) <= 1:
+        raise HTTPException(status_code=400, detail="Keep at least one active administrator")
+    user.role = role
     db.commit()
     db.refresh(user)
     return user
@@ -243,48 +301,76 @@ def jira_webhook(payload: dict[str, Any], x_jira_webhook_token: str | None = Hea
     return {"status": "updated", "ticket_number": ticket.ticket_number, "relay_status": ticket.status}
 
 
-@app.get("/api/notifications", response_model=list[NotificationOut])
-def list_notifications(unread_only: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    query = select(Notification).where(Notification.user_id == current_user.id).order_by(Notification.created_at.desc()).limit(50)
-    if unread_only:
-        query = query.where(Notification.read_at.is_(None))
-    return db.scalars(query).all()
+def ensure_notification_preferences(db: Session, user_id: int) -> NotificationPreference:
+    preferences = db.get(NotificationPreference, user_id)
+    if not preferences:
+        preferences = NotificationPreference(user_id=user_id)
+        db.add(preferences)
+        db.commit()
+        db.refresh(preferences)
+    return preferences
 
 
-@app.patch("/api/notifications/{notification_id}/read", response_model=NotificationOut)
+@app.get("/api/notifications")
+def list_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Notification).where(Notification.user_id == current_user.id).order_by(Notification.created_at.desc()).limit(50)).all()
+    return {"items": [NotificationOut.model_validate(row).model_dump(mode="json") for row in rows], "unread_count": sum(1 for row in rows if row.read_at is None)}
+
+
+@app.patch("/api/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    notification = db.get(Notification, notification_id)
-    if not notification or notification.user_id != current_user.id:
+    notification = db.scalar(select(Notification).where(Notification.id == notification_id, Notification.user_id == current_user.id))
+    if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
     notification.read_at = datetime.now(timezone.utc)
     db.commit()
-    db.refresh(notification)
-    return notification
+    return {"status": "read"}
 
 
 @app.post("/api/notifications/read-all")
 def mark_all_notifications_read(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    notifications = db.scalars(select(Notification).where(Notification.user_id == current_user.id, Notification.read_at.is_(None))).all()
+    rows = db.scalars(select(Notification).where(Notification.user_id == current_user.id, Notification.read_at.is_(None))).all()
     now = datetime.now(timezone.utc)
-    for notification in notifications:
+    for notification in rows:
         notification.read_at = now
     db.commit()
-    return {"status": "ok", "updated": len(notifications)}
+    return {"status": "read", "count": len(rows)}
 
 
 @app.get("/api/notifications/preferences", response_model=NotificationPreferenceOut)
 def get_notification_preferences(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return get_preferences(db, current_user.id)
+    return ensure_notification_preferences(db, current_user.id)
 
 
 @app.put("/api/notifications/preferences", response_model=NotificationPreferenceOut)
 def update_notification_preferences(payload: NotificationPreferenceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    preferences = get_preferences(db, current_user.id)
-    for key, value in payload.model_dump().items():
-        setattr(preferences, key, value)
+    preferences = ensure_notification_preferences(db, current_user.id)
+    for field, value in payload.model_dump().items():
+        setattr(preferences, field, value)
     db.commit()
     db.refresh(preferences)
     return preferences
+
+
+@app.get("/api/routing/rules", response_model=list[RoutingRuleOut])
+def list_routing_rules(current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+    seed_routing_rules(db)
+    return db.scalars(select(RoutingRule).order_by(RoutingRule.category.asc())).all()
+
+
+@app.put("/api/routing/rules", response_model=RoutingRuleOut)
+def update_routing_rule(payload: RoutingRuleUpdate, current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    rule = db.scalar(select(RoutingRule).where(RoutingRule.category == payload.category))
+    if not rule:
+        rule = RoutingRule(category=payload.category)
+        db.add(rule)
+    rule.team = payload.team.strip()
+    rule.sla_hours = payload.sla_hours
+    rule.auto_escalate_high = payload.auto_escalate_high
+    rule.updated_by = current_user.email
+    db.commit()
+    db.refresh(rule)
+    return rule
 
 
 @app.get("/api/health")
@@ -329,6 +415,31 @@ def retry_job(job_id: str, current_user: User = Depends(require_roles("manager",
 @app.post("/api/jobs/sla-scan", response_model=JobOut)
 def schedule_sla_scan(current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
     return enqueue_sla_scan(db)
+
+
+@app.get("/api/analytics/overview")
+def analytics_overview(current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+    tickets = db.scalars(select(Ticket)).all()
+    feedback = db.scalars(select(AgentFeedback)).all()
+    now = datetime.now(timezone.utc)
+    status_counts = Counter(ticket.status for ticket in tickets)
+    job_counts = Counter(job.status for job in db.scalars(select(Job)).all())
+    category_counts = Counter(ticket.category for ticket in tickets)
+    priority_counts = Counter(ticket.priority for ticket in tickets)
+    team_counts = Counter(ticket.assignee or "Unassigned" for ticket in tickets)
+    recent = []
+    for offset in range(6, -1, -1):
+        day = (now - timedelta(days=offset)).date()
+        recent.append({"date": day.isoformat(), "tickets": sum(1 for ticket in tickets if ticket.created_at and ticket.created_at.date() == day)})
+    helpful = sum(1 for row in feedback if row.rating == "helpful")
+    return {
+        "totals": {"tickets": len(tickets), "open": sum(value for key, value in status_counts.items() if key not in {"Resolved", "Closed"}), "resolved": status_counts.get("Resolved", 0), "sla_breached": sum(1 for ticket in tickets if sla_state(ticket.status, ticket.sla_due_at) == "breached"), "automation_rate": round((sum(1 for ticket in tickets if ticket.source == "AI Agent") / len(tickets)) * 100) if tickets else 0, "feedback_helpful_rate": round((helpful / len(feedback)) * 100) if feedback else 0, "jobs": sum(job_counts.values()), "jobs_completed": job_counts.get("succeeded", 0), "jobs_failed": job_counts.get("failed", 0), "jobs_queued": job_counts.get("queued", 0)}, 
+        "by_status": dict(status_counts),
+        "by_category": dict(category_counts),
+        "by_priority": dict(priority_counts),
+        "by_team": dict(team_counts),
+        "daily_volume": recent,
+    }
 
 
 @app.get("/api/stats")
@@ -478,7 +589,6 @@ def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = 
     db.add(event)
     db.commit()
     db.refresh(event)
-    notify_ticket(db, ticket, "comment", f"New update on {ticket.ticket_number}", payload.message, f"comment:{event.id}")
     dispatch_jira_sync(db, ticket, comment=payload.message)
     return event
 
@@ -523,7 +633,6 @@ async def upload_ticket_attachment(
     record_event(db, ticket_id, "attachment", f"Attachment uploaded: {safe_name}", actor=current_user.full_name, visibility="internal" if current_user.role != "requester" else "public")
     db.commit()
     db.refresh(attachment)
-    notify_ticket(db, ticket, "attachment", f"New attachment on {ticket.ticket_number}", f"{safe_name} was added to the ticket.", f"attachment:{attachment.id}")
     return attachment
 
 
@@ -618,7 +727,7 @@ def list_tickets(
 @app.post("/api/tickets", response_model=TicketOut)
 def create_ticket(payload: TicketCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     number = f"HD-{datetime.now(timezone.utc).strftime('%m%d%H%M')}"
-    route = route_ticket(payload.category, payload.priority)
+    route = route_ticket(payload.category, payload.priority, rules=routing_rules(db))
     ticket = Ticket(
         ticket_number=number,
         requester_email=current_user.email,
@@ -637,7 +746,6 @@ def create_ticket(payload: TicketCreate, current_user: User = Depends(get_curren
     if ticket.status == "Escalated":
         record_event(db, ticket.id, "escalated", ticket.escalation_reason or "High-priority ticket escalated")
     db.commit()
-    notify_ticket(db, ticket, "ticket_created", f"Ticket created: {ticket.ticket_number}", f"Your request was received and routed to {ticket.assignee}.", "created")
     dispatch_jira_sync(db, ticket)
     return ticket
 
@@ -654,7 +762,6 @@ def approve_ticket(ticket_id: int, current_user: User = Depends(require_roles("m
         ticket.status = "Escalated" if ticket.priority == "High" else "Open"
     record_event(db, ticket.id, "approval", "Safety review approved by manager", actor=current_user.full_name)
     db.commit()
-    notify_ticket(db, ticket, "approval", f"Ticket approved: {ticket.ticket_number}", "A manager approved the safety review and automation can continue.", "approved")
     if jira.configured:
         try:
             dispatch_jira_sync(db, ticket)
@@ -685,7 +792,7 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
         raise HTTPException(status_code=404, detail="Ticket not found")
     if ticket.requires_approval and not ticket.approved_by:
         raise HTTPException(status_code=409, detail="This ticket requires manager approval before escalation")
-    route = route_ticket(ticket.category, "High", force_escalation=True)
+    route = route_ticket(ticket.category, "High", force_escalation=True, rules=routing_rules(db))
     ticket.priority = "High"
     ticket.status = "Escalated"
     ticket.assignee = route["assignee"]
@@ -696,7 +803,6 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
     db.refresh(ticket)
     record_event(db, ticket.id, "escalated", ticket.escalation_reason, actor=current_user.full_name)
     db.commit()
-    notify_ticket(db, ticket, "escalation", f"Ticket escalated: {ticket.ticket_number}", ticket.escalation_reason, "escalated")
     dispatch_jira_sync(db, ticket, comment=ticket.escalation_reason)
     return ticket
 
@@ -742,7 +848,6 @@ def update_ticket_status(
             detail += f" ({ticket.resolution_code})"
         record_event(db, ticket.id, "status_changed", detail, actor=current_user.full_name)
         db.commit()
-        notify_ticket(db, ticket, "status_change", f"Ticket {ticket.ticket_number}: {ticket.status}", detail, f"status:{ticket.status}:{ticket.resolution_code or ''}")
         dispatch_jira_sync(db, ticket, comment=detail)
     return ticket
 

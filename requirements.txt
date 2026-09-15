@@ -1,6 +1,8 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
-sqlalchemy==2.0.52
-psycopg[binary]==3.2.13
+sqlalchemy==2.0.40
+psycopg[binary]==3.2.6
 python-dotenv==1.1.0
 openai==1.75.0
+PyJWT==2.10.1
+pwdlib[argon2]==0.2.1

@@ -414,6 +414,28 @@ def create_ticket(payload: TicketCreate, current_user: User = Depends(get_curren
     return ticket
 
 
+@app.post("/api/tickets/{ticket_id}/approve", response_model=TicketOut)
+def approve_ticket(ticket_id: int, current_user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    ticket.requires_approval = False
+    ticket.approved_at = datetime.now(timezone.utc)
+    ticket.approved_by = current_user.email
+    if ticket.status == "Needs review":
+        ticket.status = "Escalated" if ticket.priority == "High" else "Open"
+    record_event(db, ticket.id, "approval", "Safety review approved by manager", actor=current_user.full_name)
+    db.commit()
+    if jira.configured:
+        try:
+            sync_ticket_to_jira(db, ticket, force=True)
+        except JiraError as exc:
+            ticket.sync_error = str(exc)
+            db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
 @app.post("/api/tickets/{ticket_id}/sync", response_model=TicketOut)
 def sync_ticket(ticket_id: int, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
     ticket = db.get(Ticket, ticket_id)
@@ -432,6 +454,8 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.requires_approval and not ticket.approved_by:
+        raise HTTPException(status_code=409, detail="This ticket requires manager approval before escalation")
     route = route_ticket(ticket.category, "High", force_escalation=True)
     ticket.priority = "High"
     ticket.status = "Escalated"
@@ -452,8 +476,10 @@ def update_ticket_status(ticket_id: int, status: str, current_user: User = Depen
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    if status not in {"Open", "In progress", "Escalated", "Resolved"}:
+    if status not in {"Open", "In progress", "Escalated", "Needs review", "Resolved"}:
         raise HTTPException(status_code=400, detail="Unsupported status")
+    if ticket.requires_approval and not ticket.approved_by and status != "Needs review":
+        raise HTTPException(status_code=409, detail="This ticket requires manager approval before status changes")
     previous_status = ticket.status
     ticket.status = status
     db.commit()

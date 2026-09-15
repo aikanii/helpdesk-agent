@@ -18,8 +18,18 @@ from app.main import app  # noqa: E402
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as test_client:
+        login = test_client.post("/api/auth/login", json={"username": "admin@acme.co", "password": "relay-demo-2026"})
+        assert login.status_code == 200
+        test_client.headers.update({"Authorization": f"Bearer {login.json()['access_token']}"})
         yield test_client
     TEST_DB.unlink(missing_ok=True)
+
+
+def test_authentication_and_profile(client):
+    profile = client.get("/api/auth/me")
+    assert profile.status_code == 200
+    assert profile.json()["role"] == "admin"
+    assert profile.json()["email"] == "admin@acme.co"
 
 
 def test_health_and_seeded_dashboard(client):

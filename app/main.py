@@ -19,7 +19,8 @@ from .auth import create_access_token, get_current_user, hash_password, require_
 from .core import settings
 from .integrations.jira import JiraError, jira
 from .integrations.service import sync_ticket_to_jira
-from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketEvent, User, init_db
+from .lifecycle import RESOLUTION_CODES, validate_transition
+from .models import AgentFeedback, Conversation, ConversationMessage, SessionLocal, Ticket, TicketAttachment, TicketEvent, User, init_db
 from .rag import ROLE_RANK, index
 from .routing import route_ticket
 from .schemas import (
@@ -36,9 +37,13 @@ from .schemas import (
     KnowledgeCreate,
     LoginRequest,
     TokenOut,
+    TicketAttachmentOut,
     TicketCreate,
     TicketEventOut,
     TicketOut,
+    TicketStatusUpdate,
+    LinkRequest,
+    WatcherRequest,
     UserCreate,
     UserOut,
 )
@@ -123,8 +128,8 @@ def get_db():
         db.close()
 
 
-def record_event(db: Session, ticket_id: int, event_type: str, message: str, actor: str = "Relay AI", details: dict | None = None) -> None:
-    db.add(TicketEvent(ticket_id=ticket_id, event_type=event_type, actor=actor, message=message, details=details))
+def record_event(db: Session, ticket_id: int, event_type: str, message: str, actor: str = "Relay AI", details: dict | None = None, visibility: str = "internal") -> None:
+    db.add(TicketEvent(ticket_id=ticket_id, event_type=event_type, actor=actor, message=message, details=details, visibility=visibility))
 
 
 @app.get("/", include_in_schema=False)
@@ -352,20 +357,145 @@ def list_ticket_events(ticket_id: int, current_user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail="Ticket not found")
     if current_user.role == "requester" and ticket.requester_email != current_user.email:
         raise HTTPException(status_code=403, detail="You do not have access to this ticket")
-    return db.scalars(
-        select(TicketEvent).where(TicketEvent.ticket_id == ticket_id).order_by(TicketEvent.created_at.asc())
-    ).all()
+    event_query = select(TicketEvent).where(TicketEvent.ticket_id == ticket_id)
+    if current_user.role == "requester":
+        event_query = event_query.where(TicketEvent.visibility == "public")
+    return db.scalars(event_query.order_by(TicketEvent.created_at.asc())).all()
 
 
 @app.post("/api/tickets/{ticket_id}/events", response_model=TicketEventOut)
-def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
-    if not db.get(Ticket, ticket_id):
+def add_ticket_event(ticket_id: int, payload: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    event = TicketEvent(ticket_id=ticket_id, event_type="note", actor=current_user.full_name, message=payload.message)
+    if current_user.role == "requester":
+        if ticket.requester_email != current_user.email:
+            raise HTTPException(status_code=403, detail="You do not have access to this ticket")
+        if payload.visibility != "public":
+            raise HTTPException(status_code=403, detail="Requesters can only add public replies")
+    event = TicketEvent(
+        ticket_id=ticket_id,
+        event_type="comment" if payload.visibility == "public" else "note",
+        actor=current_user.full_name,
+        message=payload.message,
+        visibility=payload.visibility,
+    )
     db.add(event)
     db.commit()
     db.refresh(event)
+    sync_ticket_to_jira(db, ticket, comment=payload.message)
     return event
+
+
+ALLOWED_ATTACHMENT_TYPES = {
+    "application/pdf", "text/plain", "text/csv", "text/markdown",
+    "image/png", "image/jpeg", "image/webp", "application/json",
+}
+
+
+@app.post("/api/tickets/{ticket_id}/attachments", response_model=TicketAttachmentOut)
+async def upload_ticket_attachment(
+    ticket_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if current_user.role == "requester" and ticket.requester_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this ticket")
+    if file.content_type not in ALLOWED_ATTACHMENT_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported attachment type")
+    payload = await file.read()
+    if len(payload) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Attachments must be 10 MB or smaller")
+    safe_name = Path(file.filename or "attachment").name.replace("..", "_")
+    relative_path = Path("uploads") / str(ticket_id) / f"{uuid.uuid4().hex}_{safe_name}"
+    absolute_path = settings.base_dir / "data" / relative_path
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    absolute_path.write_bytes(payload)
+    attachment = TicketAttachment(
+        ticket_id=ticket_id,
+        filename=safe_name,
+        content_type=file.content_type,
+        storage_path=str(relative_path),
+        size_bytes=len(payload),
+        uploaded_by=current_user.email,
+    )
+    db.add(attachment)
+    record_event(db, ticket_id, "attachment", f"Attachment uploaded: {safe_name}", actor=current_user.full_name, visibility="internal" if current_user.role != "requester" else "public")
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@app.get("/api/tickets/{ticket_id}/attachments", response_model=list[TicketAttachmentOut])
+def list_ticket_attachments(ticket_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if current_user.role == "requester" and ticket.requester_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You do not have access to this ticket")
+    return db.scalars(select(TicketAttachment).where(TicketAttachment.ticket_id == ticket_id).order_by(TicketAttachment.created_at.asc())).all()
+
+
+@app.get("/api/attachments/{attachment_id}/download")
+def download_attachment(attachment_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    attachment = db.get(TicketAttachment, attachment_id)
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    ticket = db.get(Ticket, attachment.ticket_id)
+    if current_user.role == "requester" and (not ticket or ticket.requester_email != current_user.email):
+        raise HTTPException(status_code=403, detail="You do not have access to this attachment")
+    path = settings.base_dir / "data" / attachment.storage_path
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Attachment file is missing")
+    return FileResponse(path, media_type=attachment.content_type, filename=attachment.filename)
+
+
+@app.post("/api/tickets/{ticket_id}/links", response_model=TicketOut)
+def link_ticket(ticket_id: int, payload: LinkRequest, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    target = db.get(Ticket, payload.target_ticket_id)
+    if not ticket or not target:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.id == target.id:
+        raise HTTPException(status_code=400, detail="A ticket cannot link to itself")
+    if payload.relation == "parent":
+        ticket.parent_ticket_id = target.id
+        message = f"Linked to parent ticket {target.ticket_number}"
+    elif payload.relation == "duplicate":
+        ticket.duplicate_of_id = target.id
+        message = f"Marked as duplicate of {target.ticket_number}"
+    else:
+        related = list(ticket.related_ticket_ids or [])
+        if target.id not in related:
+            related.append(target.id)
+        ticket.related_ticket_ids = related
+        message = f"Linked related ticket {target.ticket_number}"
+    record_event(db, ticket.id, "link", message, actor=current_user.full_name, details={"relation": payload.relation, "target_ticket_id": target.id})
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+@app.post("/api/tickets/{ticket_id}/watchers", response_model=TicketOut)
+def update_ticket_watchers(ticket_id: int, payload: WatcherRequest, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    watchers = list(ticket.watchers or [])
+    email = payload.email.strip().lower()
+    if payload.action == "add" and email not in watchers:
+        watchers.append(email)
+    if payload.action == "remove":
+        watchers = [watcher for watcher in watchers if watcher != email]
+    ticket.watchers = watchers
+    record_event(db, ticket.id, "watcher", f"Watcher {payload.action}: {email}", actor=current_user.full_name)
+    db.commit()
+    db.refresh(ticket)
+    return ticket
 
 
 @app.get("/api/tickets", response_model=list[TicketOut])
@@ -472,23 +602,47 @@ def escalate_ticket(ticket_id: int, payload: EscalationRequest, current_user: Us
 
 
 @app.patch("/api/tickets/{ticket_id}/status", response_model=TicketOut)
-def update_ticket_status(ticket_id: int, status: str, current_user: User = Depends(require_roles("agent", "manager", "admin")), db: Session = Depends(get_db)):
+def update_ticket_status(
+    ticket_id: int,
+    status: str,
+    resolution_code: str | None = None,
+    current_user: User = Depends(require_roles("agent", "manager", "admin")),
+    db: Session = Depends(get_db),
+):
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    if status not in {"Open", "In progress", "Escalated", "Needs review", "Resolved"}:
-        raise HTTPException(status_code=400, detail="Unsupported status")
+    try:
+        validate_transition(ticket.status, status)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if status == "Closed" and current_user.role not in {"manager", "admin"}:
+        raise HTTPException(status_code=403, detail="Only managers or admins can close tickets")
     if ticket.requires_approval and not ticket.approved_by and status != "Needs review":
         raise HTTPException(status_code=409, detail="This ticket requires manager approval before status changes")
+    if resolution_code and resolution_code not in RESOLUTION_CODES:
+        raise HTTPException(status_code=400, detail="Unsupported resolution code")
     previous_status = ticket.status
+    now = datetime.now(timezone.utc)
     ticket.status = status
+    if status == "Resolved":
+        ticket.resolution_code = resolution_code or "Fixed"
+        ticket.resolved_at = now
+    elif status == "Reopened":
+        ticket.reopened_at = now
+        ticket.resolution_code = None
+        ticket.closed_at = None
+    elif status == "Closed":
+        ticket.closed_at = now
     db.commit()
     db.refresh(ticket)
     if previous_status != status:
-        status_message = f"Status changed from {previous_status} to {status}"
-        record_event(db, ticket.id, "status_changed", status_message, actor=current_user.full_name)
+        detail = f"Status changed from {previous_status} to {status}"
+        if ticket.resolution_code:
+            detail += f" ({ticket.resolution_code})"
+        record_event(db, ticket.id, "status_changed", detail, actor=current_user.full_name)
         db.commit()
-        sync_ticket_to_jira(db, ticket, comment=status_message)
+        sync_ticket_to_jira(db, ticket, comment=detail)
     return ticket
 
 

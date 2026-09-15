@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = '') => String(value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 
-const state = { tickets: [], docs: [], stats: {}, token: localStorage.getItem('relay_token'), user: null };
+const state = { tickets: [], docs: [], stats: {}, notifications: [], token: localStorage.getItem('relay_token'), user: null };
 
 async function getJson(url, options = {}) {
   const isFormData = options.body instanceof FormData;
@@ -95,11 +95,20 @@ function renderDocs(docs = state.docs) {
     </a>`).join('');
 }
 
+function renderNotifications() {
+  const unread = state.notifications.filter(notification => !notification.read_at);
+  const badge = $('#notificationBadge');
+  badge.textContent = unread.length > 9 ? '9+' : unread.length;
+  badge.classList.toggle('hidden-app', unread.length === 0);
+  const panel = $('#notificationPanel');
+  panel.innerHTML = `<div class="notification-head"><strong>Notifications</strong><button class="text-button" id="markAllRead">Mark all read</button></div>${state.notifications.length ? state.notifications.slice(0, 8).map(notification => `<button class="notification-item ${notification.read_at ? '' : 'unread'}" data-notification-id="${escapeHtml(notification.id)}"><span class="notification-dot"></span><span><strong>${escapeHtml(notification.title)}</strong><small>${escapeHtml(notification.body)}</small><em>${relativeTime(notification.created_at)}</em></span></button>`).join('') : '<div class="notification-empty">You are all caught up.</div>'}`;
+}
+
 async function loadDashboard() {
   try {
-    const [stats, tickets, docs] = await Promise.all([getJson('/api/stats'), getJson('/api/tickets'), getJson('/api/docs')]);
-    state.stats = stats; state.tickets = tickets; state.docs = docs;
-    renderStats(); renderTickets(); renderDocs();
+    const [stats, tickets, docs, notifications] = await Promise.all([getJson('/api/stats'), getJson('/api/tickets'), getJson('/api/docs'), getJson('/api/notifications')]);
+    state.stats = stats; state.tickets = tickets; state.docs = docs; state.notifications = notifications;
+    renderStats(); renderTickets(); renderDocs(); renderNotifications();
   } catch (error) {
     showToast(error.message);
   }
@@ -164,6 +173,18 @@ $('#logoutBtn').addEventListener('click', () => {
   state.user = null;
   showLogin();
 });
+
+$('#notificationBtn').addEventListener('click', (event) => {
+  event.stopPropagation();
+  $('#notificationPanel').classList.toggle('hidden-app');
+});
+$('#notificationPanel').addEventListener('click', async (event) => {
+  const markAll = event.target.closest('#markAllRead');
+  if (markAll) { await getJson('/api/notifications/read-all', { method: 'POST' }); state.notifications.forEach(notification => notification.read_at = new Date().toISOString()); renderNotifications(); return; }
+  const item = event.target.closest('[data-notification-id]');
+  if (item) { await getJson(`/api/notifications/${item.dataset.notificationId}/read`, { method: 'PATCH' }); const notification = state.notifications.find(entry => entry.id === item.dataset.notificationId); if (notification) notification.read_at = new Date().toISOString(); renderNotifications(); }
+});
+document.addEventListener('click', (event) => { if (!event.target.closest('#notificationPanel') && !event.target.closest('#notificationBtn')) $('#notificationPanel').classList.add('hidden-app'); });
 
 $('#uploadKnowledgeBtn').addEventListener('click', () => $('#knowledgeFileInput').click());
 $('#knowledgeFileInput').addEventListener('change', async (event) => {

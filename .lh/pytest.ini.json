@@ -1,0 +1,18 @@
+{
+    "sourceFile": "pytest.ini",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789483141342,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789483141342,
+            "name": "Commit-0",
+            "content": "[pytest]\r\npythonpath = .\r\ntestpaths = tests\r\n"
+        }
+    ]
+}

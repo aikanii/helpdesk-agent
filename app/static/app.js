@@ -36,7 +36,7 @@ function renderTickets(tickets = state.tickets) {
     return;
   }
   rows.innerHTML = tickets.slice(0, 7).map(ticket => `
-    <tr>
+    <tr class="ticket-row" data-ticket-id="${ticket.id}">
       <td><strong>${escapeHtml(ticket.ticket_number)}</strong><small>${escapeHtml(ticket.title)}</small></td>
       <td><strong>${escapeHtml(ticket.assignee || 'Service Desk')}</strong><small>${escapeHtml(ticket.category)}</small></td>
       <td><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)}</span></td>
@@ -82,7 +82,7 @@ function renderResult(result) {
       <div><h4>RECOMMENDED NEXT STEPS</h4><div class="action-list">${result.actions.map((action, index) => `<div class="action-item"><span class="action-number">${index + 1}</span><div><strong>${escapeHtml(action.label)}</strong><p>${escapeHtml(action.detail)}</p></div></div>`).join('')}</div></div>
       <div><h4>RETRIEVED EVIDENCE</h4><div class="evidence-list">${result.evidence.length ? result.evidence.map(doc => `<div class="evidence-item"><strong>${escapeHtml(doc.title)}</strong><p>${escapeHtml(doc.excerpt)}</p><span>${Math.round(doc.score * 100)}% relevance</span></div>`).join('') : '<div class="evidence-item"><p>No matching documents found. Add a runbook to improve future diagnoses.</p></div>'}</div></div>
     </div>
-    <div class="result-footer"><span>${result.agent_trace.map(escapeHtml).join(' · ')}</span>${ticket ? `<span class="ticket-created">Ticket ${escapeHtml(ticket.ticket_number)} · ${routingMessage} →</span>` : '<span>Ticket creation was skipped</span>'}</div>`;
+    <div class="result-footer"><span>${result.agent_trace.map(escapeHtml).join(' · ')}</span><div class="result-actions">${ticket ? `<span class="ticket-created">Ticket ${escapeHtml(ticket.ticket_number)} · ${routingMessage} →</span>` : '<span>Ticket creation was skipped</span>'}<span class="feedback-label">Was this helpful?</span><button class="feedback-button" data-rating="helpful" data-run-id="${escapeHtml(result.run_id)}" data-ticket-number="${escapeHtml(ticket?.ticket_number || '')}">Yes</button><button class="feedback-button" data-rating="not_helpful" data-run-id="${escapeHtml(result.run_id)}" data-ticket-number="${escapeHtml(ticket?.ticket_number || '')}">No</button></div></div>`;
   panel.classList.remove('hidden');
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -114,5 +114,56 @@ $('#statusFilter').addEventListener('click', () => {
   $('#statusFilter').dataset.value = next; $('#statusFilter').innerHTML = `${next === 'All' ? 'All statuses' : next} <span>⌄</span>`;
   renderTickets(next === 'All' ? state.tickets : state.tickets.filter(ticket => ticket.status === next));
 });
+
+function openModal() { $('#ticketModal').classList.remove('hidden'); $('#ticketModal').setAttribute('aria-hidden', 'false'); }
+function closeModal() { $('#ticketModal').classList.add('hidden'); $('#ticketModal').setAttribute('aria-hidden', 'true'); }
+
+async function openTicket(ticketId) {
+  openModal();
+  $('#ticketDetail').innerHTML = '<div class="loading">Loading ticket details…</div>';
+  try {
+    const [ticket, events] = await Promise.all([getJson(`/api/tickets/${ticketId}`), getJson(`/api/tickets/${ticketId}/events`)]);
+    $('#modalTitle').textContent = `${ticket.ticket_number} · ${ticket.title}`;
+    const timeline = events.length ? events.map(event => `<div class="timeline-item"><span class="timeline-dot ${event.event_type}"></span><div><strong>${escapeHtml(event.message)}</strong><small>${escapeHtml(event.actor)} · ${relativeTime(event.created_at)}</small></div></div>`).join('') : '<p class="empty-note">No activity recorded yet.</p>';
+    $('#ticketDetail').innerHTML = `
+      <div class="detail-summary"><div><span class="status-pill ${statusClass(ticket.status)}">${escapeHtml(ticket.status)}</span><span class="priority ${priorityClass(ticket.priority)}">${escapeHtml(ticket.priority)} priority</span></div><span class="detail-team">${escapeHtml(ticket.assignee || 'Service Desk')}</span></div>
+      <p class="detail-description">${escapeHtml(ticket.description)}</p>
+      <div class="detail-metrics"><div><span>Category</span><strong>${escapeHtml(ticket.category)}</strong></div><div><span>SLA due</span><strong>${ticket.sla_due_at ? new Date(ticket.sla_due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set'}</strong></div><div><span>Source</span><strong>${escapeHtml(ticket.source)}</strong></div></div>
+      <div class="modal-section"><h4>ACTIVITY TIMELINE</h4><div class="timeline">${timeline}</div></div>
+      <div class="modal-section"><h4>UPDATE TICKET</h4><div class="status-actions"><button class="modal-action" data-ticket-status="In progress">Mark in progress</button><button class="modal-action" data-ticket-status="Resolved">Resolve</button>${ticket.status !== 'Escalated' ? '<button class="modal-action danger" data-escalate-ticket="true">Escalate</button>' : ''}</div><textarea id="ticketNote" class="note-input" rows="2" placeholder="Add an internal note…"></textarea><button class="button primary note-submit" data-add-note="true">Add note <span class="arrow">→</span></button></div>`;
+    document.querySelectorAll('[data-ticket-status]').forEach(button => button.addEventListener('click', () => updateTicketStatus(ticket.id, button.dataset.ticketStatus)));
+    $('[data-escalate-ticket]')?.addEventListener('click', () => escalateTicket(ticket.id));
+    $('[data-add-note]')?.addEventListener('click', () => addTicketNote(ticket.id));
+  } catch (error) { $('#ticketDetail').innerHTML = `<div class="loading">${escapeHtml(error.message)}</div>`; }
+}
+
+async function updateTicketStatus(ticketId, status) {
+  try { await getJson(`/api/tickets/${ticketId}/status?status=${encodeURIComponent(status)}`, { method: 'PATCH' }); showToast(`Ticket marked ${status.toLowerCase()}`); closeModal(); await loadDashboard(); } catch (error) { showToast(error.message); }
+}
+
+async function escalateTicket(ticketId) {
+  const reason = window.prompt('Why should this ticket be escalated?', 'User impact requires immediate attention');
+  if (reason === null) return;
+  try { await getJson(`/api/tickets/${ticketId}/escalate`, { method: 'POST', body: JSON.stringify({ reason }) }); showToast('Ticket escalated with a 2-hour SLA'); closeModal(); await loadDashboard(); } catch (error) { showToast(error.message); }
+}
+
+async function addTicketNote(ticketId) {
+  const input = $('#ticketNote');
+  const message = input?.value.trim();
+  if (!message) { showToast('Write a note first.'); return; }
+  try { await getJson(`/api/tickets/${ticketId}/events`, { method: 'POST', body: JSON.stringify({ message, actor: 'Alex Morgan' }) }); showToast('Internal note added'); await openTicket(ticketId); } catch (error) { showToast(error.message); }
+}
+
+document.addEventListener('click', (event) => {
+  if (event.target.dataset.closeModal === 'true' || event.target.id === 'closeModal') closeModal();
+  const row = event.target.closest('.ticket-row');
+  if (row && !event.target.closest('.row-more')) openTicket(row.dataset.ticketId);
+  const feedback = event.target.closest('[data-rating]');
+  if (feedback) {
+    getJson('/api/feedback', { method: 'POST', body: JSON.stringify({ run_id: feedback.dataset.runId, ticket_number: feedback.dataset.ticketNumber || null, rating: feedback.dataset.rating }) }).then(() => { feedback.parentElement.querySelectorAll('[data-rating]').forEach(button => button.disabled = true); showToast('Thanks for the feedback'); }).catch(error => showToast(error.message));
+  }
+});
+
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeModal(); });
 
 loadDashboard();

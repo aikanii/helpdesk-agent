@@ -6,6 +6,36 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=180)
+    password: str = Field(min_length=8, max_length=200)
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: dict[str, Any]
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UserCreate(BaseModel):
+    email: str = Field(min_length=5, max_length=180)
+    full_name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=8, max_length=200)
+    role: str = Field(default="requester", pattern="^(requester|agent|manager|admin)$")
+
+
 class DiagnoseRequest(BaseModel):
     message: str = Field(min_length=3, max_length=5000)
     user_email: str = "alex.morgan@acme.co"
@@ -84,6 +114,7 @@ class TicketOut(BaseModel):
     ticket_number: str
     title: str
     description: str
+    requester_email: str | None
     category: str
     priority: str
     status: str

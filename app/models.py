@@ -58,6 +58,14 @@ class Ticket(Base):
     safety_flags: Mapped[list[str]] = mapped_column(JSON, default=list)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    resolution_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    parent_ticket_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    duplicate_of_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    related_ticket_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    watchers: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -122,6 +130,20 @@ class TicketEvent(Base):
     actor: Mapped[str] = mapped_column(String(120), default="Relay AI")
     message: Mapped[str] = mapped_column(Text)
     details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(16), default="internal")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class TicketAttachment(Base):
+    __tablename__ = "ticket_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(120))
+    storage_path: Mapped[str] = mapped_column(String(500))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_by: Mapped[str] = mapped_column(String(180))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -165,10 +187,21 @@ def init_db() -> None:
                 "safety_flags": "JSON",
                 "approved_at": "DATETIME",
                 "approved_by": "VARCHAR(180)",
+                "resolution_code": "VARCHAR(64)",
+                "resolved_at": "DATETIME",
+                "closed_at": "DATETIME",
+                "reopened_at": "DATETIME",
+                "parent_ticket_id": "INTEGER",
+                "duplicate_of_id": "INTEGER",
+                "related_ticket_ids": "JSON",
+                "watchers": "JSON",
             }
             for name, column_type in columns.items():
                 if name not in existing:
                     connection.exec_driver_sql(f"ALTER TABLE tickets ADD COLUMN {name} {column_type}")
+            event_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(ticket_events)").fetchall()}
+            if "visibility" not in event_columns:
+                connection.exec_driver_sql("ALTER TABLE ticket_events ADD COLUMN visibility VARCHAR(16) DEFAULT 'internal'")
         else:
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_email VARCHAR(180)")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE")
@@ -183,6 +216,15 @@ def init_db() -> None:
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS safety_flags JSONB")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS approved_by VARCHAR(180)")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolution_code VARCHAR(64)")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS parent_ticket_id INTEGER")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS duplicate_of_id INTEGER")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS related_ticket_ids JSONB")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS watchers JSONB")
+            connection.exec_driver_sql("ALTER TABLE ticket_events ADD COLUMN IF NOT EXISTS visibility VARCHAR(16) DEFAULT 'internal'")
 
 
 def get_db(): 

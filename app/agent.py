@@ -25,6 +25,7 @@ class HelpdeskAgent:
                 ticket_number=ticket_number,
                 title=analysis["intent"],
                 description=f"Reported by {user_name} ({user_email})\n\n{message}",
+                requester_email=user_email,
                 category=analysis["category"],
                 priority=analysis["priority"],
                 status="Escalated" if route["escalated"] else "Open",

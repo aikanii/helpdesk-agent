@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 1,
+            "activePatchIndex": 2,
             "patches": [
                 {
                     "date": 1789424902815,
@@ -12,6 +12,10 @@
                 {
                     "date": 1789482870532,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -4,9 +4,9 @@\n from datetime import timedelta\n from sqlalchemy.orm import Session\n \n from .llm import llm\n-from .models import Ticket\n+from .models import Ticket, TicketEvent\n from .rag import index\n from .routing import route_ticket\n \n \n@@ -37,9 +37,14 @@\n             )\n             db.add(ticket)\n             db.commit()\n             db.refresh(ticket)\n+            db.add(TicketEvent(ticket_id=ticket.id, event_type=\"created\", actor=\"Relay AI\", message=f\"Ticket created and routed to {ticket.assignee}\"))\n+            if ticket.status == \"Escalated\":\n+                db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n+            db.commit()\n             ticket_payload = {\n+                \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n                 \"status\": ticket.status,\n                 \"priority\": ticket.priority,\n                 \"assignee\": ticket.assignee,\n"
+                },
+                {
+                    "date": 1789484101330,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -24,8 +24,9 @@\n             ticket = Ticket(\n                 ticket_number=ticket_number,\n                 title=analysis[\"intent\"],\n                 description=f\"Reported by {user_name} ({user_email})\\n\\n{message}\",\n+                requester_email=user_email,\n                 category=analysis[\"category\"],\n                 priority=analysis[\"priority\"],\n                 status=\"Escalated\" if route[\"escalated\"] else \"Open\",\n                 assignee=route[\"assignee\"],\n"
                 }
             ],
             "date": 1789424902815,

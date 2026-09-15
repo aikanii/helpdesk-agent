@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 7,
+            "activePatchIndex": 8,
             "patches": [
                 {
                     "date": 1789425120095,
@@ -36,6 +36,10 @@
                 {
                     "date": 1789495480017,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -17,8 +17,27 @@\n     expires_in: int\n     user: dict[str, Any]\n \n \n+class JobOut(BaseModel):\n+    id: str\n+    job_type: str\n+    status: str\n+    payload: dict[str, Any]\n+    result: dict[str, Any] | None\n+    idempotency_key: str | None\n+    attempts: int\n+    max_attempts: int\n+    run_after: datetime\n+    locked_at: datetime | None\n+    locked_by: str | None\n+    last_error: str | None\n+    created_at: datetime\n+    completed_at: datetime | None\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n class UserOut(BaseModel):\n     id: int\n     email: str\n     full_name: str\n"
+                },
+                {
+                    "date": 1789496578524,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -261,5 +261,41 @@\n     chunk_count: int = 0\n \n \n class ConversationCreate(BaseModel):\n-    user_name: str = \n\\ No newline at end of file\n+    user_name: str = \"Alex Morgan\"\n+    user_email: str = \"alex.morgan@acme.co\"\n+\n+\n+class ConversationMessageOut(BaseModel):\n+    id: int\n+    role: str\n+    content: str\n+    payload: dict[str, Any] | None\n+    created_at: datetime\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n+class ConversationOut(BaseModel):\n+    id: str\n+    user_name: str\n+    user_email: str\n+    status: str\n+    created_at: datetime\n+    updated_at: datetime\n+    messages: list[ConversationMessageOut] = Field(default_factory=list)\n+\n+    model_config = {\"from_attributes\": True}\n+\n+\n+class TicketEventOut(BaseModel):\n+    id: int\n+    ticket_id: int\n+    event_type: str\n+    actor: str\n+    message: str\n+    details: dict[str, Any] | None\n+    visibility: str\n+    created_at: datetime\n+\n+    model_config = {\"from_attributes\": True}\n"
                 }
             ],
             "date": 1789425120095,

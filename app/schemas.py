@@ -37,6 +37,39 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NotificationOut(BaseModel):
+    id: str
+    user_id: int
+    ticket_id: int | None
+    notification_type: str
+    title: str
+    body: str
+    channel: str
+    status: str
+    notification_metadata: dict[str, Any] | None = None
+    error: str | None
+    created_at: datetime
+    sent_at: datetime | None
+    read_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    in_app_enabled: bool = True
+    email_enabled: bool = True
+    email_on_assignment: bool = True
+    email_on_status_change: bool = True
+    email_on_sla_breach: bool = True
+
+
+class NotificationPreferenceOut(NotificationPreferenceUpdate):
+    user_id: int
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class UserOut(BaseModel):
     id: int
     email: str

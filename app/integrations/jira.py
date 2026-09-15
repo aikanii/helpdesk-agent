@@ -90,7 +90,7 @@ class JiraClient:
             self._request("POST", f"/rest/api/3/issue/{issue_key}/transitions", {"transition": {"id": match["id"]}})
 
     def sync_status(self, issue_key: str, internal_status: str) -> None:
-        mapping = {"Open": "Open", "In progress": "In Progress", "Escalated": "In Progress", "Resolved": "Done"}
+        mapping = {"Open": "Open", "In progress": "In Progress", "Pending": "Waiting for customer", "Escalated": "In Progress", "Needs review": "Open", "Resolved": "Done", "Closed": "Done", "Reopened": "In Progress"}
         self.transition(issue_key, mapping.get(internal_status, "Open"))
 
     @staticmethod

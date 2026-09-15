@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1789486604781,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1789494680287,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -89,9 +89,9 @@\n         if match:\r\n             self._request(\"POST\", f\"/rest/api/3/issue/{issue_key}/transitions\", {\"transition\": {\"id\": match[\"id\"]}})\r\n \r\n     def sync_status(self, issue_key: str, internal_status: str) -> None:\r\n-        mapping = {\"Open\": \"Open\", \"In progress\": \"In Progress\", \"Escalated\": \"In Progress\", \"Resolved\": \"Done\"}\r\n+        mapping = {\"Open\": \"Open\", \"In progress\": \"In Progress\", \"Pending\": \"Waiting for customer\", \"Escalated\": \"In Progress\", \"Needs review\": \"Open\", \"Resolved\": \"Done\", \"Closed\": \"Done\", \"Reopened\": \"In Progress\"}\r\n         self.transition(issue_key, mapping.get(internal_status, \"Open\"))\r\n \r\n     @staticmethod\r\n     def _jira_priority(priority: str) -> str:\r\n"
                 }
             ],
             "date": 1789486604781,

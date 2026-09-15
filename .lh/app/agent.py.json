@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 5,
+            "activePatchIndex": 6,
             "patches": [
                 {
                     "date": 1789424902815,
@@ -28,6 +28,10 @@
                 {
                     "date": 1789495434062,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -4,9 +4,9 @@\n from datetime import timedelta\n \n from sqlalchemy.orm import Session\n \n-from .integrations.service import sync_ticket_to_jira\n+from .job_queue import dispatch_jira_sync\n from .llm import llm\n from .models import Ticket, TicketEvent\n from .rag import index\n from .routing import route_ticket\n@@ -60,9 +60,9 @@\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n             if requires_approval:\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"safety\", actor=\"Relay AI\", message=\"Automation paused pending human approval\", details={\"flags\": safety.flags}))\n             db.commit()\n-            integration = sync_ticket_to_jira(db, ticket)\n+            integration = dispatch_jira_sync(db, ticket)\n             ticket_payload = {\n                 \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n                 \"status\": ticket.status,\n"
+                },
+                {
+                    "date": 1789496532288,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -7,8 +7,9 @@\n \n from .job_queue import dispatch_jira_sync\n from .llm import llm\n from .models import Ticket, TicketEvent\n+from .notifications import notify_ticket\n from .rag import index\n from .routing import route_ticket\n from .safety import assess_input, validate_triage\n \n@@ -60,8 +61,9 @@\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n             if requires_approval:\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"safety\", actor=\"Relay AI\", message=\"Automation paused pending human approval\", details={\"flags\": safety.flags}))\n             db.commit()\n+            notify_ticket(db, ticket, \"ticket_created\", f\"Ticket created: {ticket.ticket_number}\", f\"Your request was received and routed to {ticket.assignee}.\", \"created\")\n             integration = dispatch_jira_sync(db, ticket)\n             ticket_payload = {\n                 \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n"
                 }
             ],
             "date": 1789424902815,

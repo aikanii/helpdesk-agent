@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .job_queue import dispatch_jira_sync
 from .llm import llm
 from .models import Ticket, TicketEvent
+from .notifications import notify_ticket
 from .rag import index
 from .routing import route_ticket
 from .safety import assess_input, validate_triage
@@ -61,6 +62,7 @@ class HelpdeskAgent:
             if requires_approval:
                 db.add(TicketEvent(ticket_id=ticket.id, event_type="safety", actor="Relay AI", message="Automation paused pending human approval", details={"flags": safety.flags}))
             db.commit()
+            notify_ticket(db, ticket, "ticket_created", f"Ticket created: {ticket.ticket_number}", f"Your request was received and routed to {ticket.assignee}.", "created")
             integration = dispatch_jira_sync(db, ticket)
             ticket_payload = {
                 "id": ticket.id,

@@ -1,181 +1,195 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
-
-from .core import settings
-
-try:
-    from pgvector.sqlalchemy import Vector
-except ImportError:
-    Vector = None
-
-EmbeddingType = Vector(1536) if Vector is not None and settings.database_url.startswith("postgres") else JSON
+from pydantic import BaseModel, Field
 
 
-class Base(DeclarativeBase):
-    pass
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=180)
+    password: str = Field(min_length=8, max_length=200)
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(180), unique=True, index=True)
-    full_name: Mapped[str] = mapped_column(String(120))
-    password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(24), default="requester")
-    is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: dict[str, Any]
 
 
-class Ticket(Base):
-    __tablename__ = "tickets"
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+    created_at: datetime
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ticket_number: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    title: Mapped[str] = mapped_column(String(220))
-    description: Mapped[str] = mapped_column(Text)
-    requester_email: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
-    category: Mapped[str] = mapped_column(String(64), default="General")
-    priority: Mapped[str] = mapped_column(String(24), default="Medium")
-    status: Mapped[str] = mapped_column(String(24), default="Open")
-    assignee: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    source: Mapped[str] = mapped_column(String(32), default="AI Agent")
-    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    external_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    external_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
-    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    model_config = {"from_attributes": True}
 
 
-class KnowledgeDocument(Base):
-    __tablename__ = "knowledge_documents"
-
-    id: Mapped[str] = mapped_column(String(48), primary_key=True)
-    title: Mapped[str] = mapped_column(String(220))
-    category: Mapped[str] = mapped_column(String(64), default="General", index=True)
-    source: Mapped[str] = mapped_column(String(120), default="Uploaded runbook")
-    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    content_hash: Mapped[str] = mapped_column(String(64), index=True)
-    min_role: Mapped[str] = mapped_column(String(24), default="requester")
-    status: Mapped[str] = mapped_column(String(24), default="indexed")
-    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_by: Mapped[str] = mapped_column(String(180), default="system")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+class UserCreate(BaseModel):
+    email: str = Field(min_length=5, max_length=180)
+    full_name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=8, max_length=200)
+    role: str = Field(default="requester", pattern="^(requester|agent|manager|admin)$")
 
 
-class KnowledgeChunk(Base):
-    __tablename__ = "knowledge_chunks"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    document_id: Mapped[str] = mapped_column(ForeignKey("knowledge_documents.id", ondelete="CASCADE"), index=True)
-    chunk_index: Mapped[int] = mapped_column(Integer)
-    content: Mapped[str] = mapped_column(Text)
-    token_count: Mapped[int] = mapped_column(Integer, default=0)
-    embedding: Mapped[list[float] | None] = mapped_column(EmbeddingType, nullable=True)
-    chunk_metadata: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class DiagnoseRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=5000)
+    user_email: str = "alex.morgan@acme.co"
+    user_name: str = "Alex Morgan"
+    create_ticket: bool = True
 
 
-class Conversation(Base):
-    __tablename__ = "conversations"
-
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    user_name: Mapped[str] = mapped_column(String(120), default="Alex Morgan")
-    user_email: Mapped[str] = mapped_column(String(180), default="alex.morgan@acme.co")
-    status: Mapped[str] = mapped_column(String(24), default="Open")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class Evidence(BaseModel):
+    id: str
+    title: str
+    excerpt: str
+    score: float
+    type: str = "Runbook"
 
 
-class ConversationMessage(Base):
-    __tablename__ = "conversation_messages"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
-    role: Mapped[str] = mapped_column(String(24))
-    content: Mapped[str] = mapped_column(Text)
-    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=5000)
+    user_email: str = "alex.morgan@acme.co"
+    user_name: str = "Alex Morgan"
+    create_ticket: bool = True
 
 
-class TicketEvent(Base):
-    __tablename__ = "ticket_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), index=True)
-    event_type: Mapped[str] = mapped_column(String(32))
-    actor: Mapped[str] = mapped_column(String(120), default="Relay AI")
-    message: Mapped[str] = mapped_column(Text)
-    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class FeedbackRequest(BaseModel):
+    run_id: str = Field(min_length=3, max_length=40)
+    ticket_number: str | None = None
+    rating: str = Field(pattern="^(helpful|not_helpful)$")
+    comment: str | None = Field(default=None, max_length=1000)
 
 
-class AgentFeedback(Base):
-    __tablename__ = "agent_feedback"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(String(40), index=True)
-    ticket_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    rating: Mapped[str] = mapped_column(String(16))
-    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+class EventCreate(BaseModel):
+    message: str = Field(min_length=2, max_length=2000)
+    actor: str = "Alex Morgan"
 
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+class KnowledgeCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=220)
+    content: str = Field(min_length=20, max_length=20000)
+    category: str = Field(default="General", max_length=64)
+    source: str = Field(default="Uploaded runbook", max_length=120)
+    source_url: str | None = Field(default=None, max_length=500)
+    min_role: str = Field(default="requester", pattern="^(requester|agent|manager|admin)$")
 
 
-def init_db() -> None:
-    if settings.database_url.startswith("postgres"):
-        with engine.begin() as connection:
-            connection.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
-    Base.metadata.create_all(bind=engine)
-    # Keep the demo self-healing when an existing local SQLite database predates
-    # the escalation fields. Production deployments should use Alembic migrations.
-    with engine.begin() as connection:
-        if settings.database_url.startswith("sqlite"):
-            existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(tickets)").fetchall()}
-            columns = {
-                "requester_email": "VARCHAR(180)",
-                "sla_due_at": "DATETIME",
-                "escalated_at": "DATETIME",
-                "escalation_reason": "TEXT",
-                "external_provider": "VARCHAR(32)",
-                "external_id": "VARCHAR(120)",
-                "external_url": "VARCHAR(500)",
-                "last_synced_at": "DATETIME",
-                "sync_error": "TEXT",
-            }
-            for name, column_type in columns.items():
-                if name not in existing:
-                    connection.exec_driver_sql(f"ALTER TABLE tickets ADD COLUMN {name} {column_type}")
-        else:
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS requester_email VARCHAR(180)")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_reason TEXT")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_provider VARCHAR(32)")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_id VARCHAR(120)")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_url VARCHAR(500)")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP WITH TIME ZONE")
-            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sync_error TEXT")
+class Action(BaseModel):
+    label: str
+    detail: str
+    status: str = "recommended"
 
 
-def get_db(): 
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class DiagnoseResponse(BaseModel):
+    run_id: str
+    intent: str
+    confidence: int
+    summary: str
+    category: str
+    priority: str
+    actions: list[Action]
+    evidence: list[Evidence]
+    ticket: dict[str, Any] | None = None
+    agent_trace: list[str]
+    safety_flags: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
+    sanitized_input: bool = False
+
+
+class TicketCreate(BaseModel):
+    title: str
+    description: str
+    category: str = "General"
+    priority: str = "Medium"
+    assignee: str | None = None
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class EscalationRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class TicketOut(BaseModel):
+    id: int
+    ticket_number: str
+    title: str
+    description: str
+    requester_email: str | None
+    category: str
+    priority: str
+    status: str
+    assignee: str | None
+    source: str
+    evidence: list[dict[str, Any]]
+    sla_due_at: datetime | None
+    escalated_at: datetime | None
+    escalation_reason: str | None
+    external_provider: str | None
+    external_id: str | None
+    external_url: str | None
+    last_synced_at: datetime | None
+    sync_error: str | None
+    requires_approval: bool
+    safety_flags: list[str]
+    approved_at: datetime | None
+    approved_by: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentOut(BaseModel):
+    id: str
+    title: str
+    content: str
+    category: str
+    updated: str
+    source: str = "Seed runbook"
+    source_url: str | None = None
+    min_role: str = "requester"
+    status: str = "indexed"
+    chunk_count: int = 0
+
+
+class ConversationCreate(BaseModel):
+    user_name: str = "Alex Morgan"
+    user_email: str = "alex.morgan@acme.co"
+
+
+class ConversationMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    payload: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationOut(BaseModel):
+    id: str
+    user_name: str
+    user_email: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class TicketEventOut(BaseModel):
+    id: int
+    ticket_id: int
+    event_type: str
+    actor: str
+    message: str
+    details: dict[str, Any] | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

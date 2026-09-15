@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 .env
 helpdesk.db
+*.db
 .pytest_cache/

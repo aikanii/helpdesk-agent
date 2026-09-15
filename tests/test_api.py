@@ -81,6 +81,14 @@ def test_knowledge_ingestion_and_feedback(client):
     assert feedback.status_code == 200
 
 
+def test_jira_integration_status_is_safe_when_unconfigured(client):
+    status = client.get("/api/integrations/jira/status")
+    assert status.status_code == 200
+    assert status.json()["configured"] is False
+    webhook = client.post("/api/webhooks/jira", json={"issue": {"key": "IT-1"}})
+    assert webhook.status_code == 401
+
+
 def test_ticket_timeline_and_manual_note(client):
     ticket = client.get("/api/tickets").json()[0]
     events = client.get(f"/api/tickets/{ticket['id']}/events")

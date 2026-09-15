@@ -3,7 +3,7 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 2,
+            "activePatchIndex": 3,
             "patches": [
                 {
                     "date": 1789424902815,
@@ -16,6 +16,10 @@
                 {
                     "date": 1789484101330,
                     "content": "Index: \n===================================================================\n--- \n+++ \n@@ -24,8 +24,9 @@\n             ticket = Ticket(\n                 ticket_number=ticket_number,\n                 title=analysis[\"intent\"],\n                 description=f\"Reported by {user_name} ({user_email})\\n\\n{message}\",\n+                requester_email=user_email,\n                 category=analysis[\"category\"],\n                 priority=analysis[\"priority\"],\n                 status=\"Escalated\" if route[\"escalated\"] else \"Open\",\n                 assignee=route[\"assignee\"],\n"
+                },
+                {
+                    "date": 1789486428744,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,8 +3,9 @@\n import uuid\n from datetime import timedelta\n from sqlalchemy.orm import Session\n \n+from .integrations.service import sync_ticket_to_jira\n from .llm import llm\n from .models import Ticket, TicketEvent\n from .rag import index\n from .routing import route_ticket\n@@ -42,16 +43,22 @@\n             db.add(TicketEvent(ticket_id=ticket.id, event_type=\"created\", actor=\"Relay AI\", message=f\"Ticket created and routed to {ticket.assignee}\"))\n             if ticket.status == \"Escalated\":\n                 db.add(TicketEvent(ticket_id=ticket.id, event_type=\"escalated\", actor=\"Relay AI\", message=ticket.escalation_reason or \"High-priority ticket escalated\"))\n             db.commit()\n+            integration = sync_ticket_to_jira(db, ticket)\n             ticket_payload = {\n                 \"id\": ticket.id,\n                 \"ticket_number\": ticket.ticket_number,\n                 \"status\": ticket.status,\n                 \"priority\": ticket.priority,\n                 \"assignee\": ticket.assignee,\n                 \"sla_due_at\": ticket.sla_due_at.isoformat() if ticket.sla_due_at else None,\n                 \"escalation_reason\": ticket.escalation_reason,\n+                \"external_provider\": ticket.external_provider,\n+                \"external_id\": ticket.external_id,\n+                \"external_url\": ticket.external_url,\n+                \"sync_error\": ticket.sync_error,\n+                \"integration_status\": integration[\"status\"],\n                 \"created_at\": ticket.created_at.isoformat(),\n             }\n             if ticket.status == \"Escalated\":\n                 trace.append(f\"Escalated {ticket.ticket_number} to {ticket.assignee} with a 2-hour SLA\")\n"
                 }
             ],
             "date": 1789424902815,

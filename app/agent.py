@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 from sqlalchemy.orm import Session
 
+from .integrations.service import sync_ticket_to_jira
 from .llm import llm
 from .models import Ticket, TicketEvent
 from .rag import index
@@ -43,6 +44,7 @@ class HelpdeskAgent:
             if ticket.status == "Escalated":
                 db.add(TicketEvent(ticket_id=ticket.id, event_type="escalated", actor="Relay AI", message=ticket.escalation_reason or "High-priority ticket escalated"))
             db.commit()
+            integration = sync_ticket_to_jira(db, ticket)
             ticket_payload = {
                 "id": ticket.id,
                 "ticket_number": ticket.ticket_number,
@@ -51,6 +53,11 @@ class HelpdeskAgent:
                 "assignee": ticket.assignee,
                 "sla_due_at": ticket.sla_due_at.isoformat() if ticket.sla_due_at else None,
                 "escalation_reason": ticket.escalation_reason,
+                "external_provider": ticket.external_provider,
+                "external_id": ticket.external_id,
+                "external_url": ticket.external_url,
+                "sync_error": ticket.sync_error,
+                "integration_status": integration["status"],
                 "created_at": ticket.created_at.isoformat(),
             }
             if ticket.status == "Escalated":

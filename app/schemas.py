@@ -96,6 +96,9 @@ class DiagnoseResponse(BaseModel):
     evidence: list[Evidence]
     ticket: dict[str, Any] | None = None
     agent_trace: list[str]
+    safety_flags: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
+    sanitized_input: bool = False
 
 
 class TicketCreate(BaseModel):
@@ -131,6 +134,10 @@ class TicketOut(BaseModel):
     external_url: str | None
     last_synced_at: datetime | None
     sync_error: str | None
+    requires_approval: bool
+    safety_flags: list[str]
+    approved_at: datetime | None
+    approved_by: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

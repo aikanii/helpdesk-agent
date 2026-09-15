@@ -42,6 +42,11 @@ class Ticket(Base):
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     escalation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -107,6 +112,11 @@ def init_db() -> None:
                 "sla_due_at": "DATETIME",
                 "escalated_at": "DATETIME",
                 "escalation_reason": "TEXT",
+                "external_provider": "VARCHAR(32)",
+                "external_id": "VARCHAR(120)",
+                "external_url": "VARCHAR(500)",
+                "last_synced_at": "DATETIME",
+                "sync_error": "TEXT",
             }
             for name, column_type in columns.items():
                 if name not in existing:
@@ -116,6 +126,11 @@ def init_db() -> None:
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMP WITH TIME ZONE")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMP WITH TIME ZONE")
             connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS escalation_reason TEXT")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_provider VARCHAR(32)")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_id VARCHAR(120)")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS external_url VARCHAR(500)")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMP WITH TIME ZONE")
+            connection.exec_driver_sql("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sync_error TEXT")
 
 
 def get_db(): 

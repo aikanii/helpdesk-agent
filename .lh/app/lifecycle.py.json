@@ -1,0 +1,18 @@
+{
+    "sourceFile": "app/lifecycle.py",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1789494574099,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1789494574099,
+            "name": "Commit-0",
+            "content": "from __future__ import annotations\r\n\r\nfrom datetime import datetime, timezone\r\n\r\n\r\nSTATUSES = {\"Open\", \"In progress\", \"Pending\", \"Escalated\", \"Needs review\", \"Resolved\", \"Closed\", \"Reopened\"}\r\nRESOLUTION_CODES = {\"Fixed\", \"Workaround\", \"User education\", \"Duplicate\", \"Not reproducible\", \"No action\"}\r\n\r\nTRANSITIONS = {\r\n    \"Open\": {\"In progress\", \"Pending\", \"Escalated\", \"Needs review\", \"Resolved\"},\r\n    \"In progress\": {\"Pending\", \"Escalated\", \"Resolved\"},\r\n    \"Pending\": {\"In progress\", \"Resolved\", \"Closed\"},\r\n    \"Escalated\": {\"In progress\", \"Pending\", \"Resolved\"},\r\n    \"Needs review\": {\"Open\", \"In progress\", \"Escalated\"},\r\n    \"Resolved\": {\"Closed\", \"Reopened\", \"In progress\"},\r\n    \"Closed\": {\"Reopened\"},\r\n    \"Reopened\": {\"In progress\", \"Pending\", \"Escalated\", \"Resolved\"},\r\n}\r\n\r\n\r\ndef validate_transition(current: str, target: str) -> None:\r\n    if target not in STATUSES:\r\n        raise ValueError(f\"Unsupported ticket status: {target}\")\r\n    if current == target:\r\n        return\r\n    if target not in TRANSITIONS.get(current, set()):\r\n        raise ValueError(f\"Ticket cannot transition from {current} to {target}\")\r\n\r\n\r\ndef sla_state(status: str, due_at: datetime | None) -> str:\r\n    if status in {\"Resolved\", \"Closed\"}:\r\n        return \"complete\"\r\n    if not due_at:\r\n        return \"not_set\"\r\n    due = due_at if due_at.tzinfo else due_at.replace(tzinfo=timezone.utc)\r\n    seconds_left = (due - datetime.now(timezone.utc)).total_seconds()\r\n    if seconds_left <= 0:\r\n        return \"breached\"\r\n    if seconds_left <= 3600:\r\n        return \"at_risk\"\r\n    return \"on_track\"\r\n"
+        }
+    ]
+}
